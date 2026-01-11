@@ -33,7 +33,7 @@ bot.on("message", (msg) => {
   }
 
   if (msg.text === "⭐ Reviews") {
-    bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/reviews.html");
+    bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com//reviews/index.html");
   }
 });
 
