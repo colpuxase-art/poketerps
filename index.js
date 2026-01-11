@@ -13,12 +13,13 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 // ===== BOT =====
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "Bienvenue dans PokéTerps 🧬", {
+  bot.sendMessage(msg.chat.id, "Bienvenue dans le PokéTerps 🧬", {
     reply_markup: {
       keyboard: [
         ["📘 Pokédex"],
         ["⭐ Reviews"],
         ["❤️ Soutenir"]
+        ["admin"]
       ],
       resize_keyboard: true
     }
@@ -34,6 +35,9 @@ bot.on("message", (msg) => {
 
   if (msg.text === "⭐ Reviews") {
     bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/reviews.html");
+  }
+  if (msg.text === "⭐ Reviews") {
+    bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/admin.html");
   }
 });
 
