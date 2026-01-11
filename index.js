@@ -13,30 +13,29 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 // ===== BOT =====
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "Bienvenue dans le PokéTerps 🧬", {
+  bot.sendMessage(msg.chat.id, "Bienvenue dans PokéTerps 🧬", {
     reply_markup: {
       keyboard: [
         ["📘 Pokédex"],
         ["⭐ Reviews"],
         ["❤️ Soutenir"]
-        ["admin"]
       ],
       resize_keyboard: true
     }
   });
 });
 
+bot.on("message", (msg) => {
+  const chatId = msg.chat.id;
 
-
-
-update.message.reply_text(
-    "Bienvenue 👋",
-    reply_markup=InlineKeyboardMarkup(keyboard)
-  
-  if (msg.text === "admin") {
-    bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/admin.html");
+  if (msg.text === "📘 Pokédex") {
+    bot.sendMessage(chatId, "Ouvre le Pokédex 👇\nhttps://poketerps.onrender.com");
   }
-);
+
+  if (msg.text === "⭐ Reviews") {
+    bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/reviews");
+  }
+});
 
 // ===== API REVIEWS =====
 app.get("/api/reviews", (req, res) => {
