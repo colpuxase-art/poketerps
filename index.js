@@ -33,8 +33,18 @@ bot.on("message", (msg) => {
     bot.sendMessage(chatId, "Ouvre le Pokédex 👇\nhttps://poketerps.onrender.com");
   }
 
-  if (msg.text === "⭐ Reviews") {
-    bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/reviews.html");
+  from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+
+keyboard = [
+    [InlineKeyboardButton(
+        "⭐ Reviews",
+        web_app=WebAppInfo(url="https://poketerps.onrender.com/reviews/")
+    )]
+]
+
+update.message.reply_text(
+    "Bienvenue 👋",
+    reply_markup=InlineKeyboardMarkup(keyboard)
   }
   if (msg.text === "admin") {
     bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/admin.html");

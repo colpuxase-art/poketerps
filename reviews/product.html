@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Détail</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<a class="back" href="index.html">← Retour</a>
+<div id="product"></div>
+
+<script src="data.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const id = parseInt(params.get("id"));
+const product = PRODUCTS.find(p => p.id === id);
+
+document.getElementById("product").innerHTML = `
+  <img src="${product.image}">
+  <h2>${product.name}</h2>
+  <p>${product.description}</p>
+  <p>🏷️ ${product.farm}</p>
+  <p>⭐ ${product.rating}/5</p>
+`;
+</script>
+</body>
+</html>
