@@ -36,7 +36,7 @@ bot.on("message", (msg) => {
   if (msg.text === "⭐ Reviews") {
     bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/reviews.html");
   }
-  if (msg.text === "⭐ Reviews") {
+  if (msg.text === "admin") {
     bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/admin.html");
   }
 });
