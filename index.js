@@ -26,30 +26,17 @@ bot.onText(/\/start/, (msg) => {
   });
 });
 
-bot.on("message", (msg) => {
-  const chatId = msg.chat.id;
 
-  if (msg.text === "📘 Pokédex") {
-    bot.sendMessage(chatId, "Ouvre le Pokédex 👇\nhttps://poketerps.onrender.com");
-  }
 
-  from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-
-keyboard = [
-    [InlineKeyboardButton(
-        "⭐ Reviews",
-        web_app=WebAppInfo(url="https://poketerps.onrender.com/reviews/")
-    )]
-]
 
 update.message.reply_text(
     "Bienvenue 👋",
     reply_markup=InlineKeyboardMarkup(keyboard)
-  }
+  
   if (msg.text === "admin") {
     bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/admin.html");
   }
-});
+);
 
 // ===== API REVIEWS =====
 app.get("/api/reviews", (req, res) => {
