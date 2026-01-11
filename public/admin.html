@@ -1,0 +1,18 @@
+<h1>Admin - Ajouter une review</h1>
+
+<input id="note" placeholder="Note (1-5)">
+<input id="text" placeholder="Avis">
+<button onclick="send()">Envoyer</button>
+
+<script>
+function send() {
+  fetch("/api/reviews", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      note: document.getElementById("note").value,
+      text: document.getElementById("text").value
+    })
+  });
+}
+</script>

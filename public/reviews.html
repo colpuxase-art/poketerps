@@ -1,0 +1,11 @@
+<h1>⭐ Reviews</h1>
+<div id="reviews"></div>
+
+<script>
+fetch("/api/reviews")
+  .then(res => res.json())
+  .then(data => {
+    document.getElementById("reviews").innerHTML =
+      data.map(r => `<p>${r.note}⭐ - ${r.text}</p>`).join("");
+  });
+</script>

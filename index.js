@@ -1,58 +1,55 @@
-const TelegramBot = require('node-telegram-bot-api');
-const express = require('express');
+const express = require("express");
+const TelegramBot = require("node-telegram-bot-api");
+const fs = require("fs");
+
 const app = express();
+app.use(express.json());
+app.use(express.static("public"));
 
-// Serveur web pour Render / mini-app
 const PORT = process.env.PORT || 3000;
-app.use(express.static('public')); // dossier public pour reviews
-
-// Bot Telegram
 const TOKEN = process.env.BOT_TOKEN;
-if (!TOKEN) {
-  console.error('❌ TOKEN MANQUANT');
-  process.exit(1);
-}
 
 const bot = new TelegramBot(TOKEN, { polling: true });
-console.log('🤖 Bot Telegram démarré');
 
-// Menu /start
+// ===== BOT =====
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, 'Bienvenue 👋\nQue veux-tu faire ?', {
+  bot.sendMessage(msg.chat.id, "Bienvenue dans PokéTerps 🧬", {
     reply_markup: {
       keyboard: [
-        ['📲 Nous suivre'],
-        ['❤️ Nous soutenir'],
-        ['⭐ Voir les reviews']
+        ["📘 Pokédex"],
+        ["⭐ Reviews"],
+        ["❤️ Soutenir"]
       ],
       resize_keyboard: true
     }
   });
 });
 
-// Actions des boutons
-bot.on('message', (msg) => {
-  const text = msg.text;
+bot.on("message", (msg) => {
   const chatId = msg.chat.id;
 
-  if (text === '📲 Nous suivre') {
-    bot.sendMessage(chatId, 'Instagram : https://instagram.com/toncompte');
+  if (msg.text === "📘 Pokédex") {
+    bot.sendMessage(chatId, "Ouvre le Pokédex 👇\nhttps://poketerps.onrender.com");
   }
 
-  if (text === '❤️ Nous soutenir') {
-    bot.sendMessage(chatId, 'Merci ❤️\nTu peux nous soutenir ici : https://paypal.me/tonlien');
-  }
-
-  if (text === '⭐ Voir les reviews') {
-    bot.sendMessage(chatId, 'Voici nos avis clients 👇\nhttps://TON-SITE.onrender.com/reviews.html');
+  if (msg.text === "⭐ Reviews") {
+    bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com/reviews.html");
   }
 });
 
-// Serveur web
-app.get('/', (req, res) => {
-  res.send('Bot Telegram actif');
+// ===== API REVIEWS =====
+app.get("/api/reviews", (req, res) => {
+  const data = fs.readFileSync("data/reviews.json");
+  res.json(JSON.parse(data));
+});
+
+app.post("/api/reviews", (req, res) => {
+  const reviews = JSON.parse(fs.readFileSync("data/reviews.json"));
+  reviews.push(req.body);
+  fs.writeFileSync("data/reviews.json", JSON.stringify(reviews, null, 2));
+  res.json({ success: true });
 });
 
 app.listen(PORT, () => {
-  console.log(`🌐 Serveur web actif sur le port ${PORT}`);
+  console.log("Serveur PokéTerps lancé");
 });
