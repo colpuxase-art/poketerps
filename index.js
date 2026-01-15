@@ -12,30 +12,45 @@ const TOKEN = process.env.BOT_TOKEN;
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 // ===== BOT =====
+const TelegramBot = require("node-telegram-bot-api");
+
+const token = "TON_TOKEN_ICI";
+const bot = new TelegramBot(token, { polling: true });
+
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "Bienvenue dans PokéTerps 🧬", {
+  const chatId = msg.chat.id;
+
+  bot.sendMessage(chatId, "Bienvenue dans **PokéTerps 🧬**", {
+    parse_mode: "Markdown",
     reply_markup: {
-      keyboard: [
-        ["📘 Pokédex"],
-        ["⭐ Reviews"],
-        ["❤️ Soutenir"]
-      ],
-      resize_keyboard: true
+      inline_keyboard: [
+        [
+          {
+            text: "📘 Pokédex",
+            web_app: {
+              url: "https://poketerps.onrender.com"
+            }
+          }
+        ],
+        [
+          {
+            text: "⭐ Reviews",
+            web_app: {
+              url: "https://poketerps.onrender.com/reviews/index.html"
+            }
+          }
+        ],
+        [
+          {
+            text: "❤️ Soutenir",
+            url: "https://t.me/TON_CANAL_OU_LIEN"
+          }
+        ]
+      ]
     }
   });
 });
 
-bot.on("message", (msg) => {
-  const chatId = msg.chat.id;
-
-  if (msg.text === "📘 Pokédex") {
-    bot.sendMessage(chatId, "Ouvre le Pokédex 👇\nhttps://poketerps.onrender.com");
-  }
-
-  if (msg.text === "⭐ Reviews") {
-    bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com//reviews/index.html");
-  }
-});
 
 // ===== API REVIEWS =====
 app.get("/api/reviews", (req, res) => {
