@@ -7,21 +7,18 @@ app.use(express.json());
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
-const TOKEN = process.env.BOT_TOKEN;
+
+// ⚠️ TOKEN DIRECT (pour l’instant)
+const TOKEN = "8549074065:AAF1WtGvuC-d6KJClSmPSyLt2wokCOVhyTs";
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+
 // ===== BOT =====
-const TelegramBot = require("node-telegram-bot-api");
-
-const token = "8549074065:AAF1WtGvuC-d6KJClSmPSyLt2wokCOVhyTs";
-const bot = new TelegramBot(token, { polling: true });
-
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
 
-  bot.sendMessage(chatId, "Bienvenue dans **PokéTerps 🧬**", {
-    parse_mode: "Markdown",
+  bot.sendMessage(chatId, "Bienvenue dans PokéTerps 🧬", {
     reply_markup: {
       inline_keyboard: [
         [
@@ -43,7 +40,7 @@ bot.onText(/\/start/, (msg) => {
         [
           {
             text: "❤️ Soutenir",
-            url: "https://t.me/TON_CANAL_OU_LIEN"
+            url: "https://t.me/TON_LIEN"
           }
         ]
       ]
@@ -66,5 +63,5 @@ app.post("/api/reviews", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log("Serveur PokéTerps lancé");
+  console.log("Serveur PokéTerps lancé sur le port", PORT);
 });
