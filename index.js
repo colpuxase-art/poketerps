@@ -21,7 +21,7 @@ function sendStartMenu(chatId) {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: "📘 Pokédex", callback_data: "pokedex" }
+          { text: "📘 Pokédex", url: "https://poketerps.onrender.com" }
         ],
         [
           { text: "ℹ️ Informations", callback_data: "info" }
