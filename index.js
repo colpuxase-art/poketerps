@@ -7,32 +7,62 @@ app.use(express.json());
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
-const TOKEN = "8549074065:AAErrJ085ETg-MVBEncWStsOZ863Wl9QXfo"; // ton token
+
+// ⚠️ TOKEN DIRECT (pour l’instant)
+const TOKEN = "8549074065:AAF1WtGvuC-d6KJClSmPSyLt2wokCOVhyTs";
+
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+
 // ===== BOT =====
+
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
-  bot.sendPhoto(chatId, 'https://ton-site.com/banner.jpg', {
-    caption: `👋 Bienvenue sur *Ton Bot*\n\nClique sur un bouton pour continuer 👇`,
-    parse_mode: 'Markdown',
+
+  bot.sendMessage(chatId, "Bienvenue dans PokéTerps 🧬", {
     reply_markup: {
       inline_keyboard: [
-        [{ text: '📘 Informations', callback_data: 'info' }],
-        [{ text: '📞 Contact', callback_data: 'contact' }],
-        [{ text: '🚀 Mini App', web_app: { url: 'https://ton-mini-app.com' } }]
+        [
+          {
+            text: "📘 Pokédex",
+            web_app: {
+              url: "https://poketerps.onrender.com"
+            }
+          }
+        ],
+        [
+          {
+            text: "⭐ Reviews",
+            web_app: {
+              url: "https://poketerps.onrender.com/reviews/index.html"
+            }
+          }
+        ],
+        [
+          {
+            text: "❤️ Soutenir",
+            url: "https://t.me/TON_LIEN"
+          }
+        ]
       ]
     }
   });
 });
 
-bot.on('callback_query', (query) => {
-  const chatId = query.message.chat.id;
-  if (query.data === 'info') {
-    bot.sendMessage(chatId, 'Voici les informations...');
-  } else if (query.data === 'contact') {
-    bot.sendMessage(chatId, 'Voici comment nous contacter...');
-  }
+
+// ===== API REVIEWS =====
+app.get("/api/reviews", (req, res) => {
+  const data = fs.readFileSync("data/reviews.json");
+  res.json(JSON.parse(data));
 });
 
-// ===== API REVIEWS =
+app.post("/api/reviews", (req, res) => {
+  const reviews = JSON.parse(fs.readFileSync("data/reviews.json"));
+  reviews.push(req.body);
+  fs.writeFileSync("data/reviews.json", JSON.stringify(reviews, null, 2));
+  res.json({ success: true });
+});
+
+app.listen(PORT, () => {
+  console.log("Serveur PokéTerps lancé sur le port", PORT);
+});
