@@ -1,102 +1,82 @@
-const express = require("express");
 const TelegramBot = require("node-telegram-bot-api");
-const fs = require("fs");
 
-const app = express();
-app.use(express.json());
-
-const PORT = process.env.PORT || 3000;
-
-// ⚠️ TON TOKEN (mets-le plus tard dans .env, mais ok pour l’instant)
+// ⚠️ TON TOKEN (pense à le mettre en .env plus tard)
 const TOKEN = "8549074065:AAGlqwKJRSmpnQsdZkPgVeGkC8jpW4x9zv0";
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 
 // ================= MENU /START =================
-
 function sendStartMenu(chatId) {
-  bot.sendMessage(chatId, "Bienvenue dans **PokéTerps 🧬**", {
-    parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "📘 Pokédex", url: "https://poketerps.onrender.com" }
-        ],
-        [
-          { text: "ℹ️ Informations", callback_data: "info" }
-        ],
-        [
-          { text: "⭐ Reviews", callback_data: "reviews" }
-        ],
-        [
-          { text: "❤️ Soutenir", url: "https://t.me/TON_LIEN" }
+  // PHOTO AU DÉMARRAGE
+  bot.sendPhoto(chatId, "https://picsum.photos/900/500", {
+    caption: "🧬 *Bienvenue dans PokéTerps*",
+    parse_mode: "Markdown"
+  }).then(() => {
+    bot.sendMessage(chatId, "Choisis une section 👇", {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "📘 Pokédex",
+              web_app: {
+                url: "https://poketerps.onrender.com"
+              }
+            }
+          ],
+          [
+            { text: "ℹ️ Informations", callback_data: "info" }
+          ],
+          [
+            { text: "⭐ Reviews", callback_data: "reviews" }
+          ],
+          [
+            { text: "❤️ Soutenir", url: "https://t.me/TON_LIEN" }
+          ]
         ]
-      ]
-    }
+      }
+    });
   });
 }
 
+// /start
 bot.onText(/\/start/, (msg) => {
   sendStartMenu(msg.chat.id);
 });
 
 
 // ================= BOUTONS =================
-
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
-  const messageId = query.message.message_id;
 
-  // Nettoie le bouton "chargement"
+  // enlève le loading
   bot.answerCallbackQuery(query.id);
 
   // ===== INFORMATIONS =====
   if (query.data === "info") {
-    await bot.deleteMessage(chatId, messageId);
-
-    bot.sendPhoto(
-      chatId,
-      "https://i.imgur.com/6QKJZ7X.jpg", // 👉 remplace par TON image
-      {
-        caption:
-          "🌿 *PokéTerps – Informations*\n\n" +
-          "PokéTerps est un projet éducatif autour :\n\n" +
-          "🧬 *THC* : informations générales, effets, prévention\n" +
-          "🌱 *Terpènes* : arômes, profils, propriétés\n" +
-          "🧠 *Sensibilisation* & usage responsable\n\n" +
-          "_Ce bot ne fait aucune vente._",
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "⬅️ Retour", callback_data: "back" }
-            ]
-          ]
-        }
+    bot.sendPhoto(chatId, "https://picsum.photos/900/501", {
+      caption:
+        "ℹ️ *Informations PokéTerps*\n\n" +
+        "🌿 Projet éducatif sur le THC & les terpènes\n" +
+        "🧬 THC : effets, risques, prévention\n" +
+        "🌱 Terpènes : profils, arômes\n\n" +
+        "_Aucune vente – information uniquement_",
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "⬅️ Retour", callback_data: "back" }]
+        ]
       }
-    );
+    });
   }
 
   // ===== RETOUR MENU =====
   if (query.data === "back") {
-    await bot.deleteMessage(chatId, messageId);
     sendStartMenu(chatId);
   }
 
-  // ===== EXEMPLES AUTRES =====
-  if (query.data === "pokedex") {
-    bot.sendMessage(chatId, "📘 Pokédex bientôt disponible 👀");
-  }
-
+  // ===== REVIEWS =====
   if (query.data === "reviews") {
-    bot.sendMessage(chatId, "⭐ Section Reviews en préparation");
+    bot.sendMessage(chatId, "⭐ Reviews en préparation...");
   }
-});
-
-
-// ================= SERVER =================
-
-app.listen(PORT, () => {
-  console.log("Serveur PokéTerps lancé sur le port", PORT);
 });
