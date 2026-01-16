@@ -15,6 +15,10 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 
 // ===== BOT =====
+bot.start(ctx)  
+  ctx.replyWithPhoto
+    { url: 'https://ton-site.com/banner.jpg' }
+    
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
 
