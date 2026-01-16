@@ -15,42 +15,23 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 
 // ===== BOT =====
-bot.start(ctx)  
-  ctx.replyWithPhoto
-    { url: 'https://ton-site.com/banner.jpg' }
-    
-bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
 
-  bot.sendMessage(chatId, "Bienvenue dans PokéTerps 🧬", {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "📘 Pokédex",
-            web_app: {
-              url: "https://poketerps.onrender.com"
-            }
-          }
-        ],
-        [
-          {
-            text: "⭐ Reviews",
-            web_app: {
-              url: "https://poketerps.onrender.com/reviews/index.html"
-            }
-          }
-        ],
-        [
-          {
-            text: "❤️ Soutenir",
-            url: "https://t.me/TON_LIEN"
-          }
+bot.start((ctx) => {
+  ctx.replyWithPhoto(
+    { url: 'https://ton-site.com/banner.jpg' },
+    {
+      caption: `👋 Bienvenue sur *Ton Bot*\n\nClique sur un bouton pour continuer 👇`,
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📘 Informations', callback_data: 'info' }],
+          [{ text: '📞 Contact', callback_data: 'contact' }],
+          [{ text: '🚀 Mini App', web_app: { url: 'https://ton-mini-app.com' } }]
         ]
-      ]
+      }
     }
-  });
-});
+  )
+})
 
 
 // ===== API REVIEWS =====
