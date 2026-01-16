@@ -9,7 +9,7 @@ app.use(express.static("public"));
 const PORT = process.env.PORT || 3000;
 
 // ⚠️ TOKEN DIRECT (pour l’instant)
-const TOKEN = "8549074065:AAF1WtGvuC-d6KJClSmPSyLt2wokCOVhyTs";
+const TOKEN = "8549074065:AAGlqwKJRSmpnQsdZkPgVeGkC8jpW4x9zv0";
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
