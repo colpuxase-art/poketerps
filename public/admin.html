@@ -1,18 +1,35 @@
-<h1>Admin - Ajouter une review</h1>
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin PokéTerps</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
 
-<input id="note" placeholder="Note (1-5)">
-<input id="text" placeholder="Avis">
-<button onclick="send()">Envoyer</button>
+<h1>🛠️ Admin</h1>
+
+<input id="name" placeholder="Nom Pokémon">
+<input id="rating" placeholder="Note (1-5)">
+<button onclick="addPokemon()">Ajouter</button>
 
 <script>
-function send() {
-  fetch("/api/reviews", {
+const tg = window.Telegram.WebApp;
+tg.expand();
+
+function addPokemon() {
+  fetch("/api/pokemons", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: {
+      "Content-Type": "application/json",
+      "x-telegram-id": tg.initDataUnsafe.user.id
+    },
     body: JSON.stringify({
-      note: document.getElementById("note").value,
-      text: document.getElementById("text").value
+      name: document.getElementById("name").value,
+      rating: document.getElementById("rating").value
     })
-  });
+  }).then(() => alert("✅ Pokémon ajouté"));
 }
 </script>
+
+</body>
+</html>

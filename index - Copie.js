@@ -7,35 +7,47 @@ app.use(express.json());
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
-const TOKEN = process.env.BOT_TOKEN;
+
+// ⚠️ TOKEN DIRECT (pour l’instant)
+const TOKEN = "8549074065:AAF1WtGvuC-d6KJClSmPSyLt2wokCOVhyTs";
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+
 // ===== BOT =====
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "Bienvenue dans PokéTerps 🧬", {
+  const chatId = msg.chat.id;
+
+  bot.sendMessage(chatId, "Bienvenue dans PokéTerps 🧬", {
     reply_markup: {
-      keyboard: [
-        ["📘 Pokédex"],
-        ["⭐ Reviews"],
-        ["❤️ Soutenir"]
-      ],
-      resize_keyboard: true
+      inline_keyboard: [
+        [
+          {
+            text: "📘 Pokédex",
+            web_app: {
+              url: "https://poketerps.onrender.com"
+            }
+          }
+        ],
+        [
+          {
+            text: "⭐ Reviews",
+            web_app: {
+              url: "https://poketerps.onrender.com/reviews/index.html"
+            }
+          }
+        ],
+        [
+          {
+            text: "❤️ Soutenir",
+            url: "https://t.me/TON_LIEN"
+          }
+        ]
+      ]
     }
   });
 });
 
-bot.on("message", (msg) => {
-  const chatId = msg.chat.id;
-
-  if (msg.text === "📘 Pokédex") {
-    bot.sendMessage(chatId, "Ouvre le Pokédex 👇\nhttps://poketerps.onrender.com");
-  }
-
-  if (msg.text === "⭐ Reviews") {
-    bot.sendMessage(chatId, "Avis clients ⭐\nhttps://poketerps.onrender.com//reviews/index.html");
-  }
-});
 
 // ===== API REVIEWS =====
 app.get("/api/reviews", (req, res) => {
@@ -51,5 +63,5 @@ app.post("/api/reviews", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log("Serveur PokéTerps lancé");
+  console.log("Serveur PokéTerps lancé sur le port", PORT);
 });

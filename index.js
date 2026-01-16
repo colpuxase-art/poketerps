@@ -8,22 +8,25 @@ app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 
-// ⚠️ TOKEN DIRECT (pour l’instant)
+// 🔴 REMPLACE PAR TON TOKEN
 const TOKEN = "8549074065:AAF1WtGvuC-d6KJClSmPSyLt2wokCOVhyTs";
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+// 🔴 REMPLACE PAR TON ID TELEGRAM
+const ADMIN_ID = 93372553;
 
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
-// ===== BOT =====
+/* =======================
+   BOT TELEGRAM
+======================= */
+
 bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-
-  bot.sendMessage(chatId, "Bienvenue dans PokéTerps 🧬", {
+  bot.sendMessage(msg.chat.id, "🧬 Bienvenue sur PokéTerps", {
     reply_markup: {
       inline_keyboard: [
         [
           {
-            text: "📘 Pokédex",
+            text: "📘 Ouvrir Pokédex",
             web_app: {
               url: "https://poketerps.onrender.com"
             }
@@ -33,14 +36,8 @@ bot.onText(/\/start/, (msg) => {
           {
             text: "⭐ Reviews",
             web_app: {
-              url: "https://poketerps.onrender.com/reviews/index.html"
+              url: "https://poketerps.onrender.com"
             }
-          }
-        ],
-        [
-          {
-            text: "❤️ Soutenir",
-            url: "https://t.me/TON_LIEN"
           }
         ]
       ]
@@ -48,20 +45,52 @@ bot.onText(/\/start/, (msg) => {
   });
 });
 
+bot.onText(/\/admin/, (msg) => {
+  if (msg.from.id !== ADMIN_ID) {
+    return bot.sendMessage(msg.chat.id, "⛔ Accès refusé");
+  }
 
-// ===== API REVIEWS =====
-app.get("/api/reviews", (req, res) => {
-  const data = fs.readFileSync("data/reviews.json");
+  bot.sendMessage(msg.chat.id, "🛠️ Admin PokéTerps", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "⚙️ Ouvrir Admin",
+            web_app: {
+              url: "https://poketerps.onrender.com/admin.html"
+            }
+          }
+        ]
+      ]
+    }
+  });
+});
+
+/* =======================
+   API POKÉMON
+======================= */
+
+// Lire les pokémon (PUBLIC)
+app.get("/api/pokemons", (req, res) => {
+  const data = fs.readFileSync("data/pokemons.json");
   res.json(JSON.parse(data));
 });
 
-app.post("/api/reviews", (req, res) => {
-  const reviews = JSON.parse(fs.readFileSync("data/reviews.json"));
-  reviews.push(req.body);
-  fs.writeFileSync("data/reviews.json", JSON.stringify(reviews, null, 2));
+// Ajouter pokémon (ADMIN ONLY)
+app.post("/api/pokemons", (req, res) => {
+  const telegramId = Number(req.headers["x-telegram-id"]);
+
+  if (telegramId !== ADMIN_ID) {
+    return res.status(403).json({ error: "Accès refusé" });
+  }
+
+  const pokemons = JSON.parse(fs.readFileSync("data/pokemons.json"));
+  pokemons.push(req.body);
+
+  fs.writeFileSync("data/pokemons.json", JSON.stringify(pokemons, null, 2));
   res.json({ success: true });
 });
 
 app.listen(PORT, () => {
-  console.log("Serveur PokéTerps lancé sur le port", PORT);
+  console.log("🔥 PokéTerps lancé");
 });
