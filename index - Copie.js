@@ -1,67 +1,77 @@
 const express = require("express");
 const TelegramBot = require("node-telegram-bot-api");
-const fs = require("fs");
+const path = require("path");
 
 const app = express();
 app.use(express.json());
-app.use(express.static("public"));
+
+// ✅ Sert les fichiers du dossier public
+app.use(express.static(path.join(__dirname, "public")));
+
+// ✅ Fix "Cannot GET /"
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
 const PORT = process.env.PORT || 3000;
 
-// ⚠️ TOKEN DIRECT (pour l’instant)
-const TOKEN = "8549074065:AAF1WtGvuC-d6KJClSmPSyLt2wokCOVhyTs";
+// ⚠️ Ton token (mais je te conseille VRAIMENT de le régénérer vu qu’il a été partagé)
+const TOKEN = "8549074065:AAGlqwKJRSmpnQsdZkPgVeGkC8jpW4x9zv0";
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-
-// ===== BOT =====
-bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-
-  bot.sendMessage(chatId, "Bienvenue dans PokéTerps 🧬", {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "📘 Pokédex",
-            web_app: {
-              url: "https://poketerps.onrender.com"
+// ================= MENU /START =================
+function sendStartMenu(chatId) {
+  bot.sendPhoto(chatId, "https://picsum.photos/900/500", {
+    caption: "🧬 *Bienvenue dans PokéTerps*",
+    parse_mode: "Markdown"
+  }).then(() => {
+    bot.sendMessage(chatId, "Choisis une section 👇", {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "📘 Pokédex",
+              web_app: { url: "https://poketerps.onrender.com" }
             }
-          }
-        ],
-        [
-          {
-            text: "⭐ Reviews",
-            web_app: {
-              url: "https://poketerps.onrender.com/reviews/index.html"
-            }
-          }
-        ],
-        [
-          {
-            text: "❤️ Soutenir",
-            url: "https://t.me/TON_LIEN"
-          }
+          ],
+          [{ text: "ℹ️ Informations", callback_data: "info" }],
+          [{ text: "⭐ Reviews", callback_data: "reviews" }],
+          [{ text: "❤️ Soutenir", url: "https://t.me/TON_LIEN" }]
         ]
-      ]
-    }
+      }
+    });
   });
+}
+
+bot.onText(/\/start/, (msg) => {
+  sendStartMenu(msg.chat.id);
 });
 
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  bot.answerCallbackQuery(query.id);
 
-// ===== API REVIEWS =====
-app.get("/api/reviews", (req, res) => {
-  const data = fs.readFileSync("data/reviews.json");
-  res.json(JSON.parse(data));
+  if (query.data === "info") {
+    bot.sendPhoto(chatId, "https://picsum.photos/900/501", {
+      caption:
+        "ℹ️ *Informations PokéTerps*\n\n" +
+        "🌿 Projet éducatif sur le THC & les terpènes\n" +
+        "🧬 THC : effets, risques, prévention\n" +
+        "🌱 Terpènes : profils, arômes\n\n" +
+        "_Aucune vente – information uniquement_",
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "back" }]] }
+    });
+  }
+
+  if (query.data === "back") {
+    sendStartMenu(chatId);
+  }
+
+  if (query.data === "reviews") {
+    bot.sendMessage(chatId, "⭐ Reviews en préparation...");
+  }
 });
 
-app.post("/api/reviews", (req, res) => {
-  const reviews = JSON.parse(fs.readFileSync("data/reviews.json"));
-  reviews.push(req.body);
-  fs.writeFileSync("data/reviews.json", JSON.stringify(reviews, null, 2));
-  res.json({ success: true });
-});
-
-app.listen(PORT, () => {
-  console.log("Serveur PokéTerps lancé sur le port", PORT);
-});
+app.listen(PORT, () => console.log("Serveur PokéTerps lancé sur le port", PORT));
