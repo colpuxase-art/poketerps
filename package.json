@@ -1,13 +1,14 @@
 {
   "name": "poketerps",
   "version": "1.0.0",
+  "description": "Bot Telegram Pokédex avec reviews",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.90.1",
     "express": "^4.19.2",
-    "node-telegram-bot-api": "^0.64.0"
+    "node-telegram-bot-api": "^0.66.0"
   }
 }

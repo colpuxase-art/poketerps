@@ -6,46 +6,109 @@
     tg.expand();
   }
 
-  /* ================= DATA (loaded from API) ================= */
-  let pokedex = [];
+  /* ================= DATA (HASH / WEED / EXTRACTION / WPFF) ================= */
+  // ⚠️ Les valeurs THC/effets sont indicatives. À adapter selon tes fiches.
+  const pokedex = [
+    // ===== HASH =====
+    {
+      id: 101,
+      name: "Static Hash (exemple)",
+      type: "hash",
+      thc: "THC: 35–55% (exemple)",
+      desc: "Hash sec, texture sableuse, très parfumé.",
+      img: "https://i.imgur.com/0HqWQvH.png",
+      terpenes: ["Myrcene", "Caryophyllene"],
+      aroma: ["Terreux", "Épicé", "Boisé"],
+      effects: ["Relax (ressenti)", "Calme (ressenti)"],
+      advice: "Commence bas. Évite de mélanger. Respecte la législation."
+    },
+    {
+      id: 102,
+      name: "Dry Sift (exemple)",
+      type: "hash",
+      thc: "THC: 30–50% (exemple)",
+      desc: "Tamisage à sec, rendu 'kief' pressé ou non.",
+      img: "https://i.imgur.com/0HqWQvH.png",
+      terpenes: ["Pinene", "Limonene"],
+      aroma: ["Frais", "Pin", "Agrumes"],
+      effects: ["Équilibré (ressenti)"],
+      advice: "Prends ton temps. Hydrate-toi."
+    },
 
-  async function loadCards() {
-    try {
-      const res = await fetch("/api/cards", { cache: "no-store" });
-      const data = await res.json();
-      pokedex = Array.isArray(data) ? data : [];
-    } catch (e) {
-      pokedex = [];
-      console.error("❌ Impossible de charger /api/cards", e);
+    // ===== WEED =====
+    {
+      id: 201,
+      name: "Gelato (exemple)",
+      type: "weed",
+      thc: "THC: 20–26% (exemple)",
+      desc: "Profil sucré/crémeux, populaire.",
+      img: "https://i.imgur.com/0HqWQvH.png",
+      terpenes: ["Limonene", "Caryophyllene", "Myrcene"],
+      aroma: ["Sucré", "Crémeux", "Agrumes"],
+      effects: ["Relax (ressenti)", "Bonne humeur (ressenti)"],
+      advice: "Évite de conduire. Ne mélange pas. Respecte les lois."
+    },
+    {
+      id: 202,
+      name: "Blue Dream (exemple)",
+      type: "weed",
+      thc: "THC: 18–24% (exemple)",
+      desc: "Profil fruité + pin, souvent décrit équilibré.",
+      img: "https://i.imgur.com/0HqWQvH.png",
+      terpenes: ["Myrcene", "Pinene", "Caryophyllene"],
+      aroma: ["Fruité", "Pin", "Sucré léger"],
+      effects: ["Équilibré (ressenti)", "Créatif (ressenti)"],
+      advice: "Commence bas, attends 10–15 min. Hydrate-toi."
+    },
+
+    // ===== EXTRACTION =====
+    {
+      id: 301,
+      name: "Rosin (exemple)",
+      type: "extraction",
+      thc: "THC: 60–80% (exemple)",
+      desc: "Extraction sans solvants (pression + chaleur).",
+      img: "https://i.imgur.com/0HqWQvH.png",
+      terpenes: ["Limonene", "Myrcene"],
+      aroma: ["Très aromatique", "Fruité", "Frais"],
+      effects: ["Puissant (ressenti)"],
+      advice: "Très concentré: micro-dose recommandé. Attends avant de reprendre."
+    },
+    {
+      id: 302,
+      name: "BHO / Wax (exemple)",
+      type: "extraction",
+      thc: "THC: 70–90% (exemple)",
+      desc: "Concentré très puissant (solvants).",
+      img: "https://i.imgur.com/0HqWQvH.png",
+      terpenes: ["Caryophyllene", "Pinene"],
+      aroma: ["Épicé", "Pin", "Fort"],
+      effects: ["Très puissant (ressenti)"],
+      advice: "Info éducative. Risques accrus si surdosage. Ne mélange pas."
+    },
+
+    // ===== WPFF =====
+    {
+      id: 401,
+      name: "WPFF Rosin (exemple)",
+      type: "wpff",
+      thc: "THC: 60–80% (exemple)",
+      desc: "WPFF = Whole Plant Fresh Frozen. Profil terpénique souvent 'ultra fresh'.",
+      img: "https://i.imgur.com/0HqWQvH.png",
+      terpenes: ["Limonene", "Pinene", "Myrcene"],
+      aroma: ["Frais", "Vivant", "Agrumes"],
+      effects: ["Très aromatique (ressenti)", "Puissant (ressenti)"],
+      advice: "Concentré: commence très bas. Attends 10–15 min avant de reprendre."
     }
-  }
+  ];
 
   /* ================= HELPERS ================= */
   const $ = (id) => document.getElementById(id);
 
-  const isMicron = (t) => ["120u", "90u", "73u", "45u"].includes(String(t || "").toLowerCase());
-
   const typeLabel = (t) =>
-    ({
-      hash: "Hash",
-      weed: "Weed",
-      extraction: "Extraction",
-      wpff: "WPFF",
-      "120u": "120u",
-      "90u": "90u",
-      "73u": "73u",
-      "45u": "45u",
-    }[String(t || "").toLowerCase()] || t || "—");
+    ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF" }[t] || t);
 
   const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
-
-  function getMicronLabel(card) {
-    // 🔥 recommandé: card.micron = "90u"
-    if (card?.micron) return String(card.micron);
-    // compat si certains anciens ont type="90u"
-    if (isMicron(card?.type)) return String(card.type);
-    return "";
-  }
 
   /* ================= ELEMENTS ================= */
   const listEl = $("list");
@@ -74,28 +137,12 @@
   let selected = null;
 
   /* ================= FILTERS ================= */
-  function matchesActive(card) {
-    if (activeType === "all") return true;
-
-    const t = String(activeType).toLowerCase();
-
-    // filtre micron
-    if (isMicron(t)) {
-      const m = getMicronLabel(card).toLowerCase();
-      return m === t || String(card.type || "").toLowerCase() === t;
-    }
-
-    // filtre catégorie
-    return String(card.type || "").toLowerCase() === t;
-  }
-
   function filteredList() {
-    const q = (searchInput.value || "").trim().toLowerCase();
-    return pokedex.filter((p) => {
-      const name = String(p.name || "").toLowerCase();
-      const matchesSearch = q ? name.includes(q) : true;
-      return matchesActive(p) && matchesSearch;
-    });
+    const q = searchInput.value.trim().toLowerCase();
+    return pokedex.filter((p) =>
+      (activeType === "all" || p.type === activeType) &&
+      (!q || p.name.toLowerCase().includes(q))
+    );
   }
 
   /* ================= RENDER LIST ================= */
@@ -111,40 +158,31 @@
 
     items.forEach((p) => {
       const btn = document.createElement("button");
-      btn.type = "button";
       btn.className =
         "list-group-item list-group-item-action bg-black text-white border-secondary d-flex align-items-center gap-2 rounded-3 mb-2";
 
-      const img = p.img || "https://i.imgur.com/0HqWQvH.png";
-      const micron = getMicronLabel(p);
-      const rightTag = micron ? `${typeLabel(p.type)} • ${micron}` : typeLabel(p.type);
-
       btn.innerHTML = `
-        <img src="${img}" width="40" height="40" alt="" />
+        <img src="${p.img}" width="40" height="40" />
         <div class="flex-grow-1 text-start">
-          <div class="fw-semibold">${p.name || "Sans nom"}</div>
-          <div class="small text-secondary">#${p.id ?? "—"} • ${rightTag}</div>
+          <div class="fw-semibold">${p.name}</div>
+          <div class="small text-secondary">#${p.id} • ${typeLabel(p.type)}</div>
         </div>
         <span class="badge text-bg-danger">Voir</span>
       `;
 
-      btn.onclick = () => selectCard(p);
+      btn.onclick = () => selectPokemon(p);
       listEl.appendChild(btn);
     });
   }
 
   /* ================= SELECT ================= */
-  function selectCard(p) {
+  function selectPokemon(p) {
     selected = p;
 
-    if (pokeName) pokeName.textContent = p.name || "Sans nom";
-    if (pokeId) pokeId.textContent = `#${p.id ?? "—"}`;
-
-    const micron = getMicronLabel(p);
-    const catLine = micron ? `${typeLabel(p.type)} • ${micron}` : typeLabel(p.type);
-    if (pokeType) pokeType.textContent = catLine;
-
-    if (pokeThc) pokeThc.textContent = p.thc || "—";
+    if (pokeName) pokeName.textContent = p.name;
+    if (pokeId) pokeId.textContent = `#${p.id}`;
+    if (pokeType) pokeType.textContent = typeLabel(p.type);
+    if (pokeThc) pokeThc.textContent = p.thc;
 
     if (pokeDesc) {
       const line1 = `🧬 Profil: ${p.desc || "—"}`;
@@ -152,18 +190,19 @@
       const line3 = `👃 Arômes: ${formatList(p.aroma)}`;
       const line4 = `🧠 Effets (ressenti): ${formatList(p.effects)}`;
       const line5 = `⚠️ Conseils: ${p.advice || "—"}`;
+
       pokeDesc.textContent = [line1, "", line2, line3, line4, "", line5].join("\n");
     }
 
     if (pokeImg) {
-      pokeImg.src = p.img || "https://i.imgur.com/0HqWQvH.png";
+      pokeImg.src = p.img;
       pokeImg.style.display = "inline-block";
     }
     if (placeholder) placeholder.style.display = "none";
   }
 
   /* ================= EVENTS ================= */
-  searchInput.addEventListener("input", renderList);
+  searchInput.oninput = renderList;
 
   clearBtn?.addEventListener("click", () => {
     searchInput.value = "";
@@ -182,24 +221,19 @@
   randomBtn?.addEventListener("click", () => {
     const items = filteredList();
     if (!items.length) return;
-    selectCard(items[Math.floor(Math.random() * items.length)]);
+    selectPokemon(items[Math.floor(Math.random() * items.length)]);
   });
 
   shareBtn?.addEventListener("click", async () => {
     if (!selected) return;
 
-    const micron = getMicronLabel(selected);
-    const header = micron
-      ? `🧬 ${selected.name} (#${selected.id}) — ${typeLabel(selected.type)} • ${micron}`
-      : `🧬 ${selected.name} (#${selected.id}) — ${typeLabel(selected.type)}`;
-
     const shareText =
-      `${header}\n` +
-      `${selected.thc || ""}\n\n` +
-      `🧬 ${selected.desc || "—"}\n` +
+      `🧬 ${selected.name} (#${selected.id})\n` +
+      `Catégorie: ${typeLabel(selected.type)}\n` +
+      `${selected.thc}\n\n` +
       `🌿 Terpènes: ${formatList(selected.terpenes)}\n` +
       `👃 Arômes: ${formatList(selected.aroma)}\n` +
-      `🧠 Effets: ${formatList(selected.effects)}\n\n` +
+      `🧠 Effets (ressenti): ${formatList(selected.effects)}\n\n` +
       `⚠️ ${selected.advice || "Info éducative. Les effets varient."}`;
 
     try {
@@ -214,7 +248,7 @@
     tg?.showPopup({
       title: "Partager",
       message: "Fiche copiée ✅",
-      buttons: [{ type: "ok" }],
+      buttons: [{ type: "ok" }]
     });
   });
 
@@ -224,8 +258,5 @@
   });
 
   /* ================= INIT ================= */
-  (async () => {
-    await loadCards();
-    renderList();
-  })();
+  renderList();
 })();
