@@ -23,10 +23,29 @@
   /* ================= HELPERS ================= */
   const $ = (id) => document.getElementById(id);
 
+  const isMicron = (t) => ["120u", "90u", "73u", "45u"].includes(String(t || "").toLowerCase());
+
   const typeLabel = (t) =>
-    ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF" }[t] || t);
+    ({
+      hash: "Hash",
+      weed: "Weed",
+      extraction: "Extraction",
+      wpff: "WPFF",
+      "120u": "120u",
+      "90u": "90u",
+      "73u": "73u",
+      "45u": "45u",
+    }[String(t || "").toLowerCase()] || t || "—");
 
   const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
+
+  function getMicronLabel(card) {
+    // 🔥 recommandé: card.micron = "90u"
+    if (card?.micron) return String(card.micron);
+    // compat si certains anciens ont type="90u"
+    if (isMicron(card?.type)) return String(card.type);
+    return "";
+  }
 
   /* ================= ELEMENTS ================= */
   const listEl = $("list");
@@ -55,12 +74,28 @@
   let selected = null;
 
   /* ================= FILTERS ================= */
+  function matchesActive(card) {
+    if (activeType === "all") return true;
+
+    const t = String(activeType).toLowerCase();
+
+    // filtre micron
+    if (isMicron(t)) {
+      const m = getMicronLabel(card).toLowerCase();
+      return m === t || String(card.type || "").toLowerCase() === t;
+    }
+
+    // filtre catégorie
+    return String(card.type || "").toLowerCase() === t;
+  }
+
   function filteredList() {
-    const q = searchInput.value.trim().toLowerCase();
-    return pokedex.filter((p) =>
-      (activeType === "all" || p.type === activeType) &&
-      (!q || String(p.name || "").toLowerCase().includes(q))
-    );
+    const q = (searchInput.value || "").trim().toLowerCase();
+    return pokedex.filter((p) => {
+      const name = String(p.name || "").toLowerCase();
+      const matchesSearch = q ? name.includes(q) : true;
+      return matchesActive(p) && matchesSearch;
+    });
   }
 
   /* ================= RENDER LIST ================= */
@@ -76,16 +111,19 @@
 
     items.forEach((p) => {
       const btn = document.createElement("button");
+      btn.type = "button";
       btn.className =
         "list-group-item list-group-item-action bg-black text-white border-secondary d-flex align-items-center gap-2 rounded-3 mb-2";
 
       const img = p.img || "https://i.imgur.com/0HqWQvH.png";
+      const micron = getMicronLabel(p);
+      const rightTag = micron ? `${typeLabel(p.type)} • ${micron}` : typeLabel(p.type);
 
       btn.innerHTML = `
-        <img src="${img}" width="40" height="40" />
+        <img src="${img}" width="40" height="40" alt="" />
         <div class="flex-grow-1 text-start">
           <div class="fw-semibold">${p.name || "Sans nom"}</div>
-          <div class="small text-secondary">#${p.id ?? "—"} • ${typeLabel(p.type)}</div>
+          <div class="small text-secondary">#${p.id ?? "—"} • ${rightTag}</div>
         </div>
         <span class="badge text-bg-danger">Voir</span>
       `;
@@ -101,7 +139,11 @@
 
     if (pokeName) pokeName.textContent = p.name || "Sans nom";
     if (pokeId) pokeId.textContent = `#${p.id ?? "—"}`;
-    if (pokeType) pokeType.textContent = typeLabel(p.type);
+
+    const micron = getMicronLabel(p);
+    const catLine = micron ? `${typeLabel(p.type)} • ${micron}` : typeLabel(p.type);
+    if (pokeType) pokeType.textContent = catLine;
+
     if (pokeThc) pokeThc.textContent = p.thc || "—";
 
     if (pokeDesc) {
@@ -110,7 +152,6 @@
       const line3 = `👃 Arômes: ${formatList(p.aroma)}`;
       const line4 = `🧠 Effets (ressenti): ${formatList(p.effects)}`;
       const line5 = `⚠️ Conseils: ${p.advice || "—"}`;
-
       pokeDesc.textContent = [line1, "", line2, line3, line4, "", line5].join("\n");
     }
 
@@ -122,7 +163,7 @@
   }
 
   /* ================= EVENTS ================= */
-  searchInput.oninput = renderList;
+  searchInput.addEventListener("input", renderList);
 
   clearBtn?.addEventListener("click", () => {
     searchInput.value = "";
@@ -147,13 +188,18 @@
   shareBtn?.addEventListener("click", async () => {
     if (!selected) return;
 
+    const micron = getMicronLabel(selected);
+    const header = micron
+      ? `🧬 ${selected.name} (#${selected.id}) — ${typeLabel(selected.type)} • ${micron}`
+      : `🧬 ${selected.name} (#${selected.id}) — ${typeLabel(selected.type)}`;
+
     const shareText =
-      `🧬 ${selected.name} (#${selected.id})\n` +
-      `Catégorie: ${typeLabel(selected.type)}\n` +
+      `${header}\n` +
       `${selected.thc || ""}\n\n` +
+      `🧬 ${selected.desc || "—"}\n` +
       `🌿 Terpènes: ${formatList(selected.terpenes)}\n` +
       `👃 Arômes: ${formatList(selected.aroma)}\n` +
-      `🧠 Effets (ressenti): ${formatList(selected.effects)}\n\n` +
+      `🧠 Effets: ${formatList(selected.effects)}\n\n` +
       `⚠️ ${selected.advice || "Info éducative. Les effets varient."}`;
 
     try {

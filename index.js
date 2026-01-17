@@ -1,7 +1,7 @@
 const express = require("express");
 const TelegramBot = require("node-telegram-bot-api");
 const path = require("path");
-const fs = require("fs");
+const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 app.use(express.json());
@@ -16,53 +16,86 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-// ⚠️ IMPORTANT: ton token a été exposé -> régénère-le sur @BotFather si possible
-const TOKEN = "8549074065:AAGlqwKJRSmpnQsdZkPgVeGkC8jpW4x9zv0";
+/* ================== ENV ================== */
+// ✅ Recommandé: Render -> Environment
+// BOT_TOKEN=...
+// SUPABASE_URL=https://xxxx.supabase.co
+// SUPABASE_SERVICE_ROLE=sb_secret... (ou la valeur secrète)
+
+const TOKEN = process.env.BOT_TOKEN || "8549074065:AAGlqwKJRSmpnQsdZkPgVeGkC8jpW4x9zv0"; // token test OK
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+  console.error("❌ SUPABASE_URL ou SUPABASE_SERVICE_ROLE manquant (Render -> Environment).");
+}
+
+const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+  auth: { persistSession: false },
+});
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 /* ================== ADMIN CONFIG ================== */
-const ADMIN_IDS = new Set([
-  6675436692 // ✅ TON ID ADMIN
-]);
+const ADMIN_IDS = new Set([6675436692]); // ✅ ton ID
+const isAdmin = (chatId) => ADMIN_IDS.has(chatId);
 
-function isAdmin(chatId) {
-  return ADMIN_IDS.has(chatId);
-}
+const allowedTypes = new Set(["hash", "weed", "extraction", "wpff"]);
+const micronValues = ["120u", "90u", "73u", "45u"];
+const isMicron = (v) => micronValues.includes(String(v || "").toLowerCase());
 
-/* ================== CARDS STORAGE ================== */
-const CARDS_PATH = path.join(__dirname, "data", "cards.json");
-
-function readCards() {
-  try {
-    const raw = fs.readFileSync(CARDS_PATH, "utf-8");
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? data : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-function writeCards(cards) {
-  fs.writeFileSync(CARDS_PATH, JSON.stringify(cards, null, 2), "utf-8");
-}
-
-function toArrayFromCsv(str) {
-  if (!str) return [];
-  return str
+const csvToArr = (str) =>
+  (str || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+
+/* ================== DB HELPERS (Supabase) ================== */
+async function dbListCards() {
+  const { data, error } = await sb.from("cards").select("*").order("id", { ascending: true });
+  if (error) throw error;
+  return data || [];
 }
 
-function nextId(cards) {
-  const max = cards.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0);
-  return max + 1;
+async function dbGetCard(id) {
+  const { data, error } = await sb.from("cards").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function dbInsertCard(payload) {
+  const { data, error } = await sb.from("cards").insert(payload).select("*").single();
+  if (error) throw error;
+  return data;
+}
+
+async function dbUpdateCard(id, patch) {
+  const { data, error } = await sb.from("cards").update(patch).eq("id", id).select("*").single();
+  if (error) throw error;
+  return data;
+}
+
+async function dbDeleteCard(id) {
+  const { error } = await sb.from("cards").delete().eq("id", id);
+  if (error) throw error;
 }
 
 /* ================== API POUR LA MINI-APP ================== */
-app.get("/api/cards", (req, res) => {
-  res.json(readCards());
+app.get("/api/cards", async (req, res) => {
+  try {
+    const cards = await dbListCards();
+
+    // compat: si ta mini-app attend "desc"
+    const mapped = cards.map((c) => ({
+      ...c,
+      desc: c.description ?? c.desc ?? "—",
+    }));
+
+    res.json(mapped);
+  } catch (e) {
+    console.error("❌ /api/cards:", e.message);
+    res.status(500).json({ error: "db_error" });
+  }
 });
 
 /* ================= MENU /START ================= */
@@ -76,12 +109,7 @@ function sendStartMenu(chatId) {
       bot.sendMessage(chatId, "Choisis une section 👇", {
         reply_markup: {
           inline_keyboard: [
-            [
-              {
-                text: "📘 Pokédex",
-                web_app: { url: "https://poketerps.onrender.com" },
-              },
-            ],
+            [{ text: "📘 Pokédex", web_app: { url: "https://poketerps.onrender.com" } }],
             [{ text: "ℹ️ Informations", callback_data: "info" }],
             [{ text: "⭐ Reviews", callback_data: "reviews" }],
             [{ text: "❤️ Soutenir", url: "https://t.me/TON_LIEN" }],
@@ -91,14 +119,123 @@ function sendStartMenu(chatId) {
     });
 }
 
-bot.onText(/\/start/, (msg) => {
-  sendStartMenu(msg.chat.id);
+bot.onText(/\/start/, (msg) => sendStartMenu(msg.chat.id));
+
+/* ================== ADMIN COMMANDS ================== */
+bot.onText(/^\/myid$/, (msg) => bot.sendMessage(msg.chat.id, `Ton chat_id = ${msg.chat.id}`));
+
+bot.onText(/^\/dbtest$/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return;
+  try {
+    const { data, error } = await sb.from("cards").select("id").limit(1);
+    if (error) throw error;
+    bot.sendMessage(chatId, `✅ Supabase OK (cards: ${data.length})`);
+  } catch (e) {
+    bot.sendMessage(chatId, `❌ Supabase KO: ${e.message}`);
+  }
 });
 
-/* ================== ADD FORM (WIZARD) ================== */
-// état du formulaire par chatId
+bot.onText(/^\/adminhelp$/, (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  bot.sendMessage(
+    chatId,
+    "👑 *Commandes Admin PokéTerps*\n\n" +
+      "✅ /list [hash|weed|extraction|wpff|120u|90u|73u|45u]\n" +
+      "✅ /addform *(formulaire ajout + microns)*\n" +
+      "✅ /editform *(formulaire modification + microns)*\n" +
+      "✅ /delform *(suppression avec boutons)*\n" +
+      "✅ /edit id field value *(field: description,micron,...)*\n" +
+      "✅ /del id\n" +
+      "✅ /dbtest *(test Supabase)*",
+    { parse_mode: "Markdown" }
+  );
+});
+
+bot.onText(/^\/list(?:\s+(\w+))?$/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  const filter = (match[1] || "").toLowerCase();
+
+  let cards = await dbListCards();
+  if (filter) {
+    if (isMicron(filter)) cards = cards.filter((c) => String(c.micron || "").toLowerCase() === filter);
+    else cards = cards.filter((c) => String(c.type || "").toLowerCase() === filter);
+  }
+
+  if (!cards.length) return bot.sendMessage(chatId, "Aucune fiche.");
+
+  const lines = cards
+    .slice(0, 80)
+    .map((c) => `#${c.id} • ${c.type}${c.micron ? " • " + c.micron : ""} • ${c.name}`)
+    .join("\n");
+
+  bot.sendMessage(chatId, `📚 Fiches (${cards.length})\n\n${lines}`);
+});
+
+bot.onText(/^\/del\s+(\d+)$/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  const id = Number(match[1]);
+  const card = await dbGetCard(id);
+  if (!card) return bot.sendMessage(chatId, "❌ ID introuvable.");
+
+  await dbDeleteCard(id);
+  bot.sendMessage(chatId, `🗑️ Supprimé: #${id}`);
+});
+
+bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  const id = Number(match[1]);
+  const field = match[2].toLowerCase();
+  const value = (match[3] || "").trim();
+
+  const allowedFields = new Set([
+    "name",
+    "type",
+    "micron",
+    "thc",
+    "description",
+    "img",
+    "advice",
+    "terpenes",
+    "aroma",
+    "effects",
+  ]);
+
+  if (!allowedFields.has(field)) return bot.sendMessage(chatId, "❌ Champ invalide.");
+
+  const card = await dbGetCard(id);
+  if (!card) return bot.sendMessage(chatId, "❌ ID introuvable.");
+
+  const patch = {};
+  if (field === "type") {
+    if (!allowedTypes.has(value)) return bot.sendMessage(chatId, "❌ type invalide: hash|weed|extraction|wpff");
+    patch.type = value;
+  } else if (field === "micron") {
+    const v = value === "-" ? null : value;
+    if (v && !isMicron(v)) return bot.sendMessage(chatId, "❌ micron invalide: 120u|90u|73u|45u (ou `-`)");
+    patch.micron = v;
+  } else if (["terpenes", "aroma", "effects"].includes(field)) {
+    patch[field] = csvToArr(value);
+  } else {
+    patch[field] = value === "-" ? "" : value;
+  }
+
+  await dbUpdateCard(id, patch);
+  bot.sendMessage(chatId, `✅ Modifié #${id} → ${field} mis à jour.`);
+});
+
+/* ================== ADD / EDIT / DEL FORMS ================== */
 const addWizard = new Map();
-// structure: { step, data: {name,type,thc,desc,terpenes,aroma,effects,advice,img} }
+const editWizard = new Map();
+const delWizard = new Map();
 
 function wizardCancel(chatId) {
   addWizard.delete(chatId);
@@ -106,67 +243,69 @@ function wizardCancel(chatId) {
 }
 
 function wizardAskType(chatId) {
-  bot.sendMessage(chatId, "2/9 — Choisis la *catégorie* :", {
+  bot.sendMessage(chatId, "2/10 — Choisis la *catégorie* :", {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [
-          { text: "Hash", callback_data: "wiz_type_hash" },
-          { text: "Weed", callback_data: "wiz_type_weed" },
-        ],
-        [
-          { text: "Extraction", callback_data: "wiz_type_extraction" },
-          { text: "WPFF", callback_data: "wiz_type_wpff" },
-        ],
+        [{ text: "Hash", callback_data: "wiz_type_hash" }, { text: "Weed", callback_data: "wiz_type_weed" }],
+        [{ text: "Extraction", callback_data: "wiz_type_extraction" }, { text: "WPFF", callback_data: "wiz_type_wpff" }],
         [{ text: "❌ Annuler", callback_data: "wiz_cancel" }],
       ],
     },
   });
 }
 
-function wizardFinish(chatId) {
+function wizardAskMicron(chatId) {
+  bot.sendMessage(chatId, "3/10 — Choisis le *micron* :", {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "120u", callback_data: "wiz_micron_120u" }, { text: "90u", callback_data: "wiz_micron_90u" }],
+        [{ text: "73u", callback_data: "wiz_micron_73u" }, { text: "45u", callback_data: "wiz_micron_45u" }],
+        [{ text: "Aucun", callback_data: "wiz_micron_none" }],
+        [{ text: "❌ Annuler", callback_data: "wiz_cancel" }],
+      ],
+    },
+  });
+}
+
+async function wizardFinish(chatId) {
   const state = addWizard.get(chatId);
   if (!state) return;
-
   const d = state.data;
 
-  const cards = readCards();
-  const card = {
-    id: nextId(cards),
+  const card = await dbInsertCard({
     name: d.name,
     type: d.type,
+    micron: d.micron || null,
     thc: d.thc || "—",
-    desc: d.desc || "—",
+    description: d.description || "—",
     img: d.img || "https://i.imgur.com/0HqWQvH.png",
-    terpenes: toArrayFromCsv(d.terpenes || ""),
-    aroma: toArrayFromCsv(d.aroma || ""),
-    effects: toArrayFromCsv(d.effects || ""),
+    terpenes: csvToArr(d.terpenes || ""),
+    aroma: csvToArr(d.aroma || ""),
+    effects: csvToArr(d.effects || ""),
     advice:
-      d.advice ||
-      "Info éducative. Les effets varient selon la personne. Respecte la loi.",
-  };
-
-  cards.push(card);
-  writeCards(cards);
+      d.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
+  });
 
   addWizard.delete(chatId);
 
+  const micronTxt = card.micron ? ` • ${card.micron}` : "";
   bot.sendMessage(
     chatId,
     "✅ *Fiche ajoutée !*\n\n" +
       `#${card.id} — *${card.name}*\n` +
-      `Catégorie: *${card.type}*\n` +
+      `Catégorie: *${card.type}${micronTxt}*\n` +
       `${card.thc}\n\n` +
-      `🧬 ${card.desc}\n` +
-      `🌿 Terpènes: ${card.terpenes.length ? card.terpenes.join(", ") : "—"}\n` +
-      `👃 Arômes: ${card.aroma.length ? card.aroma.join(", ") : "—"}\n` +
-      `🧠 Effets: ${card.effects.length ? card.effects.join(", ") : "—"}\n` +
+      `🧬 ${card.description}\n` +
+      `🌿 Terpènes: ${card.terpenes?.length ? card.terpenes.join(", ") : "—"}\n` +
+      `👃 Arômes: ${card.aroma?.length ? card.aroma.join(", ") : "—"}\n` +
+      `🧠 Effets: ${card.effects?.length ? card.effects.join(", ") : "—"}\n` +
       `⚠️ ${card.advice}`,
     { parse_mode: "Markdown" }
   );
 }
 
-// /addform => lance le formulaire
 bot.onText(/^\/addform$/, (msg) => {
   const chatId = msg.chat.id;
   if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
@@ -176,36 +315,23 @@ bot.onText(/^\/addform$/, (msg) => {
   bot.sendMessage(
     chatId,
     "📝 *Ajout d’une fiche* (formulaire)\n\n" +
-      "1/9 — Envoie le *nom* de la fiche.\n" +
+      "1/10 — Envoie le *nom* de la fiche.\n" +
       "Ex: `Static Hash Premium`",
     {
       parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]],
-      },
+      reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]] },
     }
   );
 });
 
-/* ================== EDIT FORM (WIZARD) ================== */
-const editWizard = new Map();
-// structure: { step: "value", id, field }
-
-function editCancel(chatId) {
-  editWizard.delete(chatId);
-  bot.sendMessage(chatId, "❌ Modification annulée.");
-}
-
-bot.onText(/^\/editform$/, (msg) => {
+bot.onText(/^\/editform$/, async (msg) => {
   const chatId = msg.chat.id;
   if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
 
-  const cards = readCards();
+  const cards = await dbListCards();
   if (!cards.length) return bot.sendMessage(chatId, "Aucune fiche à modifier.");
 
-  const buttons = cards.slice(0, 30).map((c) => [
-    { text: `#${c.id} ${c.name}`, callback_data: `edit_pick_${c.id}` },
-  ]);
+  const buttons = cards.slice(0, 30).map((c) => [{ text: `#${c.id} ${c.name}`, callback_data: `edit_pick_${c.id}` }]);
   buttons.push([{ text: "❌ Annuler", callback_data: "edit_cancel" }]);
 
   bot.sendMessage(chatId, "🛠️ Choisis la fiche à modifier :", {
@@ -213,476 +339,286 @@ bot.onText(/^\/editform$/, (msg) => {
   });
 });
 
-/* ================= CALLBACK BUTTONS (INFO/REVIEWS + WIZARDS) ================= */
+bot.onText(/^\/delform$/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  const cards = await dbListCards();
+  if (!cards.length) return bot.sendMessage(chatId, "Aucune fiche à supprimer.");
+
+  const buttons = cards.slice(0, 30).map((c) => [{ text: `🗑️ #${c.id} ${c.name}`, callback_data: `del_pick_${c.id}` }]);
+  buttons.push([{ text: "❌ Annuler", callback_data: "del_cancel" }]);
+
+  bot.sendMessage(chatId, "🗑️ Choisis la fiche à supprimer :", {
+    reply_markup: { inline_keyboard: buttons },
+  });
+});
+
+/* ================= CALLBACKS ================= */
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
-
-  // on répond au callback pour enlever le loading
   bot.answerCallbackQuery(query.id);
 
-  // ---- Wizard callbacks (addform) ----
-  if (isAdmin(chatId)) {
-    if (query.data === "wiz_cancel") {
-      wizardCancel(chatId);
-      return;
-    }
+  // info / reviews
+  if (query.data === "info") return bot.sendMessage(chatId, "ℹ️ Projet éducatif THC & terpènes. Aucune vente.");
+  if (query.data === "reviews") return bot.sendMessage(chatId, "⭐ Reviews en préparation...");
 
-    if (query.data && query.data.startsWith("wiz_type_")) {
+  // ===== ADD FORM callbacks =====
+  if (isAdmin(chatId)) {
+    if (query.data === "wiz_cancel") return wizardCancel(chatId);
+
+    if (query.data?.startsWith("wiz_type_")) {
       const state = addWizard.get(chatId);
       if (!state) return;
 
       const t = query.data.replace("wiz_type_", "");
-      const allowed = new Set(["hash", "weed", "extraction", "wpff"]);
-      if (!allowed.has(t)) return;
+      if (!allowedTypes.has(t)) return;
 
       state.data.type = t;
+      state.step = "micron";
+      addWizard.set(chatId, state);
+      return wizardAskMicron(chatId);
+    }
+
+    if (query.data?.startsWith("wiz_micron_")) {
+      const state = addWizard.get(chatId);
+      if (!state) return;
+
+      const m = query.data.replace("wiz_micron_", "");
+      state.data.micron = m === "none" ? "" : m;
       state.step = "thc";
       addWizard.set(chatId, state);
 
-      bot.sendMessage(
-        chatId,
-        "3/9 — Envoie le *THC* (ex: `THC: 35–55%` ou `THC: ~70%`).",
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]],
-          },
-        }
-      );
-      return;
+      return bot.sendMessage(chatId, "4/10 — Envoie le *THC* (ex: `THC: 35–55%`).", {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]] },
+      });
     }
   }
 
-  // ---- Wizard callbacks (editform) ----
+  // ===== EDIT/DEL callbacks =====
   if (isAdmin(chatId)) {
     if (query.data === "edit_cancel") {
-      editCancel(chatId);
-      return;
+      editWizard.delete(chatId);
+      return bot.sendMessage(chatId, "❌ Modification annulée.");
     }
 
-    if (query.data && query.data.startsWith("edit_pick_")) {
-      const id = Number(query.data.replace("edit_pick_", ""));
-      const cards = readCards();
-      const card = cards.find((c) => Number(c.id) === id);
+    if (query.data === "del_cancel") {
+      delWizard.delete(chatId);
+      return bot.sendMessage(chatId, "❌ Suppression annulée.");
+    }
+
+    if (query.data?.startsWith("del_pick_")) {
+      const id = Number(query.data.replace("del_pick_", ""));
+      const card = await dbGetCard(id);
       if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
 
-      bot.sendMessage(chatId, `✅ Fiche sélectionnée: #${id}\nChoisis le champ :`, {
+      delWizard.set(chatId, { id, step: "confirm" });
+
+      return bot.sendMessage(
+        chatId,
+        `⚠️ Confirme la suppression :\n\n#${card.id} — ${card.name}\n(${card.type}${card.micron ? " • " + card.micron : ""})`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "✅ CONFIRMER", callback_data: `del_confirm_${id}` }],
+              [{ text: "❌ Annuler", callback_data: "del_cancel" }],
+            ],
+          },
+        }
+      );
+    }
+
+    if (query.data?.startsWith("del_confirm_")) {
+      const id = Number(query.data.replace("del_confirm_", ""));
+      const st = delWizard.get(chatId);
+      if (!st || st.id !== id) return bot.sendMessage(chatId, "❌ Relance /delform.");
+
+      await dbDeleteCard(id);
+      delWizard.delete(chatId);
+      return bot.sendMessage(chatId, `🗑️ Supprimé: #${id}`);
+    }
+
+    if (query.data?.startsWith("edit_pick_")) {
+      const id = Number(query.data.replace("edit_pick_", ""));
+      const card = await dbGetCard(id);
+      if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
+
+      return bot.sendMessage(chatId, `✅ Fiche sélectionnée: #${id}\nChoisis le champ :`, {
         reply_markup: {
           inline_keyboard: [
             [{ text: "Nom", callback_data: `edit_field_${id}_name` }, { text: "Type", callback_data: `edit_field_${id}_type` }],
-            [{ text: "THC", callback_data: `edit_field_${id}_thc` }, { text: "Description", callback_data: `edit_field_${id}_desc` }],
+            [{ text: "Micron", callback_data: `edit_field_${id}_micron` }, { text: "THC", callback_data: `edit_field_${id}_thc` }],
+            [{ text: "Description", callback_data: `edit_field_${id}_description` }, { text: "Image", callback_data: `edit_field_${id}_img` }],
             [{ text: "Terpènes", callback_data: `edit_field_${id}_terpenes` }, { text: "Arômes", callback_data: `edit_field_${id}_aroma` }],
             [{ text: "Effets", callback_data: `edit_field_${id}_effects` }, { text: "Conseils", callback_data: `edit_field_${id}_advice` }],
-            [{ text: "Image", callback_data: `edit_field_${id}_img` }],
-            [{ text: "❌ Annuler", callback_data: "edit_cancel" }]
-          ]
-        }
+            [{ text: "❌ Annuler", callback_data: "edit_cancel" }],
+          ],
+        },
       });
-      return;
     }
 
-    if (query.data && query.data.startsWith("edit_field_")) {
-      // format: edit_field_{id}_{field}
+    if (query.data?.startsWith("edit_field_")) {
       const parts = query.data.split("_");
-      // ["edit","field","{id}","{field}"]
       const id = Number(parts[2]);
       const field = parts.slice(3).join("_");
 
-      const allowedFields = new Set(["name","type","thc","desc","img","advice","terpenes","aroma","effects"]);
-      if (!allowedFields.has(field)) return bot.sendMessage(chatId, "❌ Champ invalide.");
-
-      // type: on propose des boutons
       if (field === "type") {
-        bot.sendMessage(chatId, `🔁 Nouveau type pour #${id} :`, {
+        return bot.sendMessage(chatId, `🔁 Nouveau type pour #${id} :`, {
           reply_markup: {
             inline_keyboard: [
               [{ text: "Hash", callback_data: `edit_type_${id}_hash` }, { text: "Weed", callback_data: `edit_type_${id}_weed` }],
               [{ text: "Extraction", callback_data: `edit_type_${id}_extraction` }, { text: "WPFF", callback_data: `edit_type_${id}_wpff` }],
-              [{ text: "❌ Annuler", callback_data: "edit_cancel" }]
-            ]
-          }
+              [{ text: "❌ Annuler", callback_data: "edit_cancel" }],
+            ],
+          },
         });
-        return;
       }
 
-      // sinon: on attend un message texte
+      if (field === "micron") {
+        return bot.sendMessage(chatId, `🔁 Nouveau micron pour #${id} :`, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "120u", callback_data: `edit_micron_${id}_120u` }, { text: "90u", callback_data: `edit_micron_${id}_90u` }],
+              [{ text: "73u", callback_data: `edit_micron_${id}_73u` }, { text: "45u", callback_data: `edit_micron_${id}_45u` }],
+              [{ text: "Aucun", callback_data: `edit_micron_${id}_none` }],
+              [{ text: "❌ Annuler", callback_data: "edit_cancel" }],
+            ],
+          },
+        });
+      }
+
       editWizard.set(chatId, { step: "value", id, field });
 
-      bot.sendMessage(
+      return bot.sendMessage(
         chatId,
         `✍️ Envoie la nouvelle valeur pour *${field}* (ou \`-\` pour vider).\n` +
-          (["terpenes", "aroma", "effects"].includes(field)
-            ? "Format: `a,b,c` (virgules)"
-            : ""),
+          (["terpenes", "aroma", "effects"].includes(field) ? "Format: `a,b,c` (virgules)" : ""),
         {
           parse_mode: "Markdown",
-          reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "edit_cancel" }]] }
+          reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "edit_cancel" }]] },
         }
       );
-      return;
     }
 
-    if (query.data && query.data.startsWith("edit_type_")) {
-      // format: edit_type_{id}_{newType}
+    if (query.data?.startsWith("edit_type_")) {
       const parts = query.data.split("_");
       const id = Number(parts[2]);
       const newType = parts[3];
 
-      const allowedTypes = new Set(["hash", "weed", "extraction", "wpff"]);
       if (!allowedTypes.has(newType)) return bot.sendMessage(chatId, "❌ Type invalide.");
+      await dbUpdateCard(id, { type: newType });
+      return bot.sendMessage(chatId, `✅ Type mis à jour: #${id} → ${newType}`);
+    }
 
-      const cards = readCards();
-      const card = cards.find((c) => Number(c.id) === id);
-      if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
+    if (query.data?.startsWith("edit_micron_")) {
+      const parts = query.data.split("_");
+      const id = Number(parts[2]);
+      const micron = parts[3];
 
-      card.type = newType;
-      writeCards(cards);
+      const m = micron === "none" ? null : micron;
+      if (m && !isMicron(m)) return bot.sendMessage(chatId, "❌ Micron invalide.");
 
-      bot.sendMessage(chatId, `✅ Type mis à jour: #${id} → ${newType}`);
-      return;
+      await dbUpdateCard(id, { micron: m });
+      return bot.sendMessage(chatId, `✅ Micron mis à jour: #${id} → ${m || "Aucun"}`);
     }
   }
-
-  // ---- Ton système info/back/reviews ----
-  if (query.data === "info") {
-    bot.sendPhoto(chatId, "https://picsum.photos/900/501", {
-      caption:
-        "ℹ️ *Informations PokéTerps*\n\n" +
-        "🌿 Projet éducatif sur le THC & les terpènes\n" +
-        "🧬 THC : effets, risques, prévention\n" +
-        "🌱 Terpènes : profils, arômes\n\n" +
-        "_Aucune vente – information uniquement_",
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "back" }]],
-      },
-    });
-  }
-
-  if (query.data === "back") {
-    sendStartMenu(chatId);
-  }
-
-  if (query.data === "reviews") {
-    bot.sendMessage(chatId, "⭐ Reviews en préparation...");
-  }
 });
 
-/* ================== ADMIN COMMANDS ================== */
-
-// /myid => te donne ton chat id (utile pour debug)
-bot.onText(/^\/myid$/, (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, `Ton chat_id = ${chatId}`);
-});
-
-// /adminhelp => aide admin
-bot.onText(/^\/adminhelp$/, (msg) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  bot.sendMessage(
-    chatId,
-    "👑 *Commandes Admin PokéTerps*\n\n" +
-      "✅ /list [hash|weed|extraction|wpff]\n" +
-      "✅ /add name|type|thc|desc|terpenes,a,b|aroma,a,b|effects,a,b|advice|imgurl\n" +
-      "✅ /addform  *(formulaire ajout)*\n" +
-      "✅ /editform *(formulaire modification)*\n" +
-      "✅ /edit id field value\n" +
-      "✅ /del id\n\n" +
-      "*Champs edit:* name,type,thc,desc,img,advice,terpenes,aroma,effects\n" +
-      "*Types:* hash, weed, extraction, wpff",
-    { parse_mode: "Markdown" }
-  );
-});
-
-/**
- * /add name|type|thc|desc|terpenes,a,b|aroma,a,b|effects,a,b|advice|imgurl
- */
-bot.onText(/^\/add\s+(.+)/, (msg, match) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  const payload = match[1];
-  const parts = payload.split("|").map((x) => x.trim());
-
-  // 9 champs minimum
-  if (parts.length < 9) {
-    return bot.sendMessage(
-      chatId,
-      "❌ Format /add incorrect.\n\n" +
-        "✅ Exemple:\n" +
-        "/add Static Hash|hash|THC: 35–55%|Hash sec parfumé|Myrcene,Caryophyllene|Terreux,Épicé|Relax,Calme|Commence bas|https://i.imgur.com/0HqWQvH.png"
-    );
-  }
-
-  const [name, type, thc, desc, terpenesCsv, aromaCsv, effectsCsv, advice, img] = parts;
-
-  const allowedTypes = new Set(["hash", "weed", "extraction", "wpff"]);
-  if (!allowedTypes.has(type)) {
-    return bot.sendMessage(chatId, "❌ type invalide. Utilise: hash | weed | extraction | wpff");
-  }
-
-  const cards = readCards();
-
-  const card = {
-    id: nextId(cards),
-    name,
-    type,
-    thc,
-    desc,
-    img,
-    terpenes: toArrayFromCsv(terpenesCsv),
-    aroma: toArrayFromCsv(aromaCsv),
-    effects: toArrayFromCsv(effectsCsv),
-    advice,
-  };
-
-  cards.push(card);
-  writeCards(cards);
-
-  bot.sendMessage(chatId, `✅ Ajouté (#${card.id}) ${card.name}\nCatégorie: ${card.type}`);
-});
-
-/**
- * /list [type]
- */
-bot.onText(/^\/list(?:\s+(\w+))?$/, (msg, match) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  const filter = (match[1] || "").toLowerCase();
-  const cards = readCards();
-
-  const filtered = filter ? cards.filter((c) => c.type === filter) : cards;
-  if (!filtered.length) return bot.sendMessage(chatId, "Aucune fiche.");
-
-  const lines = filtered
-    .slice(0, 80)
-    .map((c) => `#${c.id} • ${c.type} • ${c.name}`)
-    .join("\n");
-
-  bot.sendMessage(chatId, `📚 Fiches (${filtered.length})\n\n${lines}`);
-});
-
-/**
- * /del id
- */
-bot.onText(/^\/del\s+(\d+)$/, (msg, match) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  const id = Number(match[1]);
-  const cards = readCards();
-  const before = cards.length;
-  const afterCards = cards.filter((c) => Number(c.id) !== id);
-
-  if (afterCards.length === before) return bot.sendMessage(chatId, "❌ ID introuvable.");
-
-  writeCards(afterCards);
-  bot.sendMessage(chatId, `🗑️ Supprimé: #${id}`);
-});
-
-/**
- * /edit id field value
- * fields: name,type,thc,desc,img,advice,terpenes,aroma,effects
- */
-bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, (msg, match) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  const id = Number(match[1]);
-  const field = match[2].toLowerCase();
-  const value = (match[3] || "").trim();
-
-  const cards = readCards();
-  const card = cards.find((c) => Number(c.id) === id);
-  if (!card) return bot.sendMessage(chatId, "❌ ID introuvable.");
-
-  const allowedFields = new Set([
-    "name",
-    "type",
-    "thc",
-    "desc",
-    "img",
-    "advice",
-    "terpenes",
-    "aroma",
-    "effects",
-  ]);
-  if (!allowedFields.has(field)) {
-    return bot.sendMessage(
-      chatId,
-      "❌ Champ invalide. Champs: name,type,thc,desc,img,advice,terpenes,aroma,effects"
-    );
-  }
-
-  if (field === "type") {
-    const allowedTypes = new Set(["hash", "weed", "extraction", "wpff"]);
-    if (!allowedTypes.has(value))
-      return bot.sendMessage(chatId, "❌ type invalide: hash|weed|extraction|wpff");
-    card.type = value;
-  } else if (["terpenes", "aroma", "effects"].includes(field)) {
-    card[field] = toArrayFromCsv(value);
-  } else {
-    card[field] = value;
-  }
-
-  writeCards(cards);
-  bot.sendMessage(chatId, `✅ Modifié #${id} → ${field} mis à jour.`);
-});
-
-/* ================= messages texte du wizard (ADD + EDIT) ================= */
-bot.on("message", (msg) => {
+/* ================= TEXT INPUT (ADD + EDIT) ================= */
+bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = (msg.text || "").trim();
 
   if (!isAdmin(chatId)) return;
-
-  // ne pas capturer les commandes (/start etc.)
   if (text.startsWith("/")) return;
 
-  /* ===== ADD WIZARD ===== */
+  // ADD wizard
   const addState = addWizard.get(chatId);
   if (addState) {
     if (addState.step === "name") {
       addState.data.name = text;
       addState.step = "type";
       addWizard.set(chatId, addState);
-      wizardAskType(chatId);
-      return;
+      return wizardAskType(chatId);
     }
 
     if (addState.step === "thc") {
       addState.data.thc = text;
-      addState.step = "desc";
+      addState.step = "description";
       addWizard.set(chatId, addState);
-      bot.sendMessage(chatId, "4/9 — Envoie la *description/profil*.", {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]],
-        },
-      });
-      return;
+      return bot.sendMessage(chatId, "5/10 — Envoie la *description/profil*.", { parse_mode: "Markdown" });
     }
 
-    if (addState.step === "desc") {
-      addState.data.desc = text;
+    if (addState.step === "description") {
+      addState.data.description = text;
       addState.step = "terpenes";
       addWizard.set(chatId, addState);
-      bot.sendMessage(
-        chatId,
-        "5/9 — Envoie les *terpènes* (virgules).\nEx: `Myrcene,Caryophyllene` (ou `-`)",
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]],
-          },
-        }
-      );
-      return;
+      return bot.sendMessage(chatId, "6/10 — Terpènes (virgules) ou `-`", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "terpenes") {
       addState.data.terpenes = text === "-" ? "" : text;
       addState.step = "aroma";
       addWizard.set(chatId, addState);
-      bot.sendMessage(
-        chatId,
-        "6/9 — Envoie les *arômes* (virgules).\nEx: `Terreux,Épicé,Boisé` (ou `-`)",
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]],
-          },
-        }
-      );
-      return;
+      return bot.sendMessage(chatId, "7/10 — Arômes (virgules) ou `-`", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "aroma") {
       addState.data.aroma = text === "-" ? "" : text;
       addState.step = "effects";
       addWizard.set(chatId, addState);
-      bot.sendMessage(
-        chatId,
-        "7/9 — Envoie les *effets (ressenti)* (virgules).\nEx: `Relax,Calme` (ou `-`)",
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]],
-          },
-        }
-      );
-      return;
+      return bot.sendMessage(chatId, "8/10 — Effets (virgules) ou `-`", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "effects") {
       addState.data.effects = text === "-" ? "" : text;
       addState.step = "advice";
       addWizard.set(chatId, addState);
-      bot.sendMessage(
-        chatId,
-        "8/9 — Envoie les *conseils / warning*.\nEx: `Commence bas. Ne mélange pas.`",
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]],
-          },
-        }
-      );
-      return;
+      return bot.sendMessage(chatId, "9/10 — Conseils / warning", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "advice") {
       addState.data.advice = text;
       addState.step = "img";
       addWizard.set(chatId, addState);
-      bot.sendMessage(
-        chatId,
-        "9/9 — Envoie l’*URL de l’image*.\nEx: `https://...png` (ou `-`)",
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]],
-          },
-        }
-      );
-      return;
+      return bot.sendMessage(chatId, "10/10 — Image URL (ou `-`)", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "img") {
       addState.data.img = text === "-" ? "" : text;
-      addWizard.set(chatId, addState);
-      wizardFinish(chatId);
-      return;
+      return wizardFinish(chatId);
     }
   }
 
-  /* ===== EDIT WIZARD ===== */
-  const editState = editWizard.get(chatId);
-  if (editState && editState.step === "value") {
-    const cards = readCards();
-    const card = cards.find((c) => Number(c.id) === Number(editState.id));
-    if (!card) {
-      editWizard.delete(chatId);
-      bot.sendMessage(chatId, "❌ Fiche introuvable.");
-      return;
-    }
-
-    const field = editState.field;
+  // EDIT wizard text input
+  const ed = editWizard.get(chatId);
+  if (ed && ed.step === "value") {
+    const { id, field } = ed;
     const val = text === "-" ? "" : text;
 
+    const patch = {};
     if (["terpenes", "aroma", "effects"].includes(field)) {
-      card[field] = val ? toArrayFromCsv(val) : [];
+      patch[field] = val ? csvToArr(val) : [];
+    } else if (field === "micron") {
+      if (val && !isMicron(val)) {
+        editWizard.delete(chatId);
+        return bot.sendMessage(chatId, "❌ micron invalide: 120u|90u|73u|45u (ou `-`)");
+      }
+      patch.micron = val ? val : null;
+    } else if (field === "type") {
+      if (!allowedTypes.has(val)) {
+        editWizard.delete(chatId);
+        return bot.sendMessage(chatId, "❌ type invalide: hash|weed|extraction|wpff");
+      }
+      patch.type = val;
     } else {
-      card[field] = val;
+      patch[field] = val;
     }
 
-    writeCards(cards);
+    await dbUpdateCard(id, patch);
     editWizard.delete(chatId);
-    bot.sendMessage(chatId, `✅ Modifié #${card.id} → ${field} mis à jour.`);
-    return;
+    return bot.sendMessage(chatId, `✅ Modifié #${id} → ${field} mis à jour.`);
   }
 });
 
