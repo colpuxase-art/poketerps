@@ -19,23 +19,28 @@ const PORT = process.env.PORT || 3000;
 /* ================== ENV ================== */
 const TOKEN =
   process.env.BOT_TOKEN || "8549074065:AAGlqwKJRSmpnQsdZkPgVeGkC8jpW4x9zv0"; // token test OK
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
-// ✅ ne crée le client QUE si les variables existent
 const supabaseReady = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE);
+
 if (!supabaseReady) {
-  console.error("❌ SUPABASE_URL ou SUPABASE_SERVICE_ROLE manquant (Render -> Environment).");
+  console.error(
+    "❌ SUPABASE_URL ou SUPABASE_SERVICE_ROLE manquant (Render -> Environment)."
+  );
 }
 
 const sb = supabaseReady
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, { auth: { persistSession: false } })
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+      auth: { persistSession: false },
+    })
   : null;
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 /* ================== ADMIN CONFIG ================== */
-const ADMIN_IDS = new Set([6675436692]); // ✅ TON ID
+const ADMIN_IDS = new Set([6675436692]); // ✅ TON ID ADMIN
 const isAdmin = (chatId) => ADMIN_IDS.has(chatId);
 
 const allowedTypes = new Set(["hash", "weed", "extraction", "wpff"]);
@@ -59,21 +64,32 @@ function assertSupabase() {
 
 async function dbListCards() {
   assertSupabase();
-  const { data, error } = await sb.from("cards").select("*").order("id", { ascending: true });
+  const { data, error } = await sb
+    .from("cards")
+    .select("*")
+    .order("id", { ascending: true });
   if (error) throw error;
   return data || [];
 }
 
 async function dbGetCard(id) {
   assertSupabase();
-  const { data, error } = await sb.from("cards").select("*").eq("id", id).maybeSingle();
+  const { data, error } = await sb
+    .from("cards")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
   if (error) throw error;
   return data || null;
 }
 
 async function dbInsertCard(payload) {
   assertSupabase();
-  const { data, error } = await sb.from("cards").insert(payload).select("*").single();
+  const { data, error } = await sb
+    .from("cards")
+    .insert(payload)
+    .select("*")
+    .single();
   if (error) throw error;
   return data;
 }
@@ -87,7 +103,12 @@ async function dbInsertMany(rows) {
 
 async function dbUpdateCard(id, patch) {
   assertSupabase();
-  const { data, error } = await sb.from("cards").update(patch).eq("id", id).select("*").single();
+  const { data, error } = await sb
+    .from("cards")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
   if (error) throw error;
   return data;
 }
@@ -100,6 +121,9 @@ async function dbDeleteCard(id) {
 
 /* ================== API POUR LA MINI-APP ================== */
 app.get("/api/cards", async (req, res) => {
+  // ✅ si supabase pas prêt, on renvoie une liste vide
+  if (!supabaseReady) return res.json([]);
+
   try {
     const cards = await dbListCards();
 
@@ -127,7 +151,12 @@ function sendStartMenu(chatId) {
       bot.sendMessage(chatId, "Choisis une section 👇", {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📘 Pokédex", web_app: { url: "https://poketerps.onrender.com" } }],
+            [
+              {
+                text: "📘 Pokédex",
+                web_app: { url: "https://poketerps.onrender.com" },
+              },
+            ],
             [{ text: "ℹ️ Informations", callback_data: "info" }],
             [{ text: "⭐ Reviews", callback_data: "reviews" }],
             [{ text: "❤️ Soutenir", url: "https://t.me/TON_LIEN" }],
@@ -136,11 +165,15 @@ function sendStartMenu(chatId) {
       });
     })
     .catch(() => {
-      // si photo fail, on envoie au moins le menu
       bot.sendMessage(chatId, "🧬 Bienvenue dans PokéTerps\n\nChoisis une section 👇", {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📘 Pokédex", web_app: { url: "https://poketerps.onrender.com" } }],
+            [
+              {
+                text: "📘 Pokédex",
+                web_app: { url: "https://poketerps.onrender.com" },
+              },
+            ],
             [{ text: "ℹ️ Informations", callback_data: "info" }],
             [{ text: "⭐ Reviews", callback_data: "reviews" }],
             [{ text: "❤️ Soutenir", url: "https://t.me/TON_LIEN" }],
@@ -153,7 +186,9 @@ function sendStartMenu(chatId) {
 bot.onText(/\/start/, (msg) => sendStartMenu(msg.chat.id));
 
 /* ================== ADMIN COMMANDS ================== */
-bot.onText(/^\/myid$/, (msg) => bot.sendMessage(msg.chat.id, `Ton chat_id = ${msg.chat.id}`));
+bot.onText(/^\/myid$/, (msg) =>
+  bot.sendMessage(msg.chat.id, `Ton chat_id = ${msg.chat.id}`)
+);
 
 bot.onText(/^\/dbtest$/, async (msg) => {
   const chatId = msg.chat.id;
@@ -169,7 +204,7 @@ bot.onText(/^\/dbtest$/, async (msg) => {
   }
 });
 
-// ✅ SEED: ajoute des fiches de base (microns)
+/* ================== SEED ================== */
 bot.onText(/^\/seed$/, async (msg) => {
   const chatId = msg.chat.id;
   if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
@@ -177,7 +212,10 @@ bot.onText(/^\/seed$/, async (msg) => {
   try {
     const existing = await dbListCards();
     if (existing.length) {
-      return bot.sendMessage(chatId, `⚠️ Il y a déjà ${existing.length} fiche(s). Je ne seed pas pour éviter les doublons.`);
+      return bot.sendMessage(
+        chatId,
+        `⚠️ Il y a déjà ${existing.length} fiche(s). Je ne seed pas pour éviter les doublons.`
+      );
     }
 
     const rows = [
@@ -186,7 +224,8 @@ bot.onText(/^\/seed$/, async (msg) => {
         type: "hash",
         micron: "120u",
         thc: "THC: 35–50% (exemple)",
-        description: "Coupe 120u : souvent plus “large”, plus végétal selon le matos. Profil éducatif.",
+        description:
+          "Coupe 120u : souvent plus “large”, plus végétal selon le matos. Profil éducatif.",
         img: "https://i.imgur.com/0HqWQvH.png",
         terpenes: ["Myrcene", "Caryophyllene"],
         aroma: ["Terreux", "Épicé"],
@@ -210,7 +249,8 @@ bot.onText(/^\/seed$/, async (msg) => {
         type: "hash",
         micron: "73u",
         thc: "THC: 45–60% (exemple)",
-        description: "Coupe 73u : très recherchée en général (souvent “sweet spot”). Profil éducatif.",
+        description:
+          "Coupe 73u : très recherchée en général (souvent “sweet spot”). Profil éducatif.",
         img: "https://i.imgur.com/0HqWQvH.png",
         terpenes: ["Pinene", "Myrcene"],
         aroma: ["Pin", "Herbacé"],
@@ -244,7 +284,10 @@ bot.onText(/^\/seed$/, async (msg) => {
     ];
 
     const inserted = await dbInsertMany(rows);
-    bot.sendMessage(chatId, `✅ Seed OK: ${inserted.length} fiche(s) ajoutée(s). Teste /editform maintenant.`);
+    bot.sendMessage(
+      chatId,
+      `✅ Seed OK: ${inserted.length} fiche(s) ajoutée(s). Teste /editform maintenant.`
+    );
   } catch (e) {
     bot.sendMessage(chatId, `❌ Seed KO: ${e.message}`);
   }
@@ -278,15 +321,22 @@ bot.onText(/^\/list(?:\s+(\w+))?$/, async (msg, match) => {
 
     let cards = await dbListCards();
     if (filter) {
-      if (isMicron(filter)) cards = cards.filter((c) => String(c.micron || "").toLowerCase() === filter);
-      else cards = cards.filter((c) => String(c.type || "").toLowerCase() === filter);
+      if (isMicron(filter)) {
+        cards = cards.filter(
+          (c) => String(c.micron || "").toLowerCase() === filter
+        );
+      } else {
+        cards = cards.filter((c) => String(c.type || "").toLowerCase() === filter);
+      }
     }
 
     if (!cards.length) return bot.sendMessage(chatId, "Aucune fiche.");
 
     const lines = cards
       .slice(0, 80)
-      .map((c) => `#${c.id} • ${c.type}${c.micron ? " • " + c.micron : ""} • ${c.name}`)
+      .map(
+        (c) => `#${c.id} • ${c.type}${c.micron ? " • " + c.micron : ""} • ${c.name}`
+      )
       .join("\n");
 
     bot.sendMessage(chatId, `📚 Fiches (${cards.length})\n\n${lines}`);
@@ -339,11 +389,13 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
 
     const patch = {};
     if (field === "type") {
-      if (!allowedTypes.has(value)) return bot.sendMessage(chatId, "❌ type invalide: hash|weed|extraction|wpff");
+      if (!allowedTypes.has(value))
+        return bot.sendMessage(chatId, "❌ type invalide: hash|weed|extraction|wpff");
       patch.type = value;
     } else if (field === "micron") {
       const v = value === "-" ? null : value;
-      if (v && !isMicron(v)) return bot.sendMessage(chatId, "❌ micron invalide: 120u|90u|73u|45u (ou `-`)");
+      if (v && !isMicron(v))
+        return bot.sendMessage(chatId, "❌ micron invalide: 120u|90u|73u|45u (ou `-`)");
       patch.micron = v;
     } else if (["terpenes", "aroma", "effects"].includes(field)) {
       patch[field] = csvToArr(value);
@@ -358,7 +410,7 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
   }
 });
 
-/* ================== ADD / EDIT / DEL FORMS ================== */
+/* ================== FORMS (WIZARDS) ================== */
 const addWizard = new Map();
 const editWizard = new Map();
 const delWizard = new Map();
@@ -373,8 +425,14 @@ function wizardAskType(chatId) {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "Hash", callback_data: "wiz_type_hash" }, { text: "Weed", callback_data: "wiz_type_weed" }],
-        [{ text: "Extraction", callback_data: "wiz_type_extraction" }, { text: "WPFF", callback_data: "wiz_type_wpff" }],
+        [
+          { text: "Hash", callback_data: "wiz_type_hash" },
+          { text: "Weed", callback_data: "wiz_type_weed" },
+        ],
+        [
+          { text: "Extraction", callback_data: "wiz_type_extraction" },
+          { text: "WPFF", callback_data: "wiz_type_wpff" },
+        ],
         [{ text: "❌ Annuler", callback_data: "wiz_cancel" }],
       ],
     },
@@ -386,8 +444,14 @@ function wizardAskMicron(chatId) {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "120u", callback_data: "wiz_micron_120u" }, { text: "90u", callback_data: "wiz_micron_90u" }],
-        [{ text: "73u", callback_data: "wiz_micron_73u" }, { text: "45u", callback_data: "wiz_micron_45u" }],
+        [
+          { text: "120u", callback_data: "wiz_micron_120u" },
+          { text: "90u", callback_data: "wiz_micron_90u" },
+        ],
+        [
+          { text: "73u", callback_data: "wiz_micron_73u" },
+          { text: "45u", callback_data: "wiz_micron_45u" },
+        ],
         [{ text: "Aucun", callback_data: "wiz_micron_none" }],
         [{ text: "❌ Annuler", callback_data: "wiz_cancel" }],
       ],
@@ -410,7 +474,9 @@ async function wizardFinish(chatId) {
     terpenes: csvToArr(d.terpenes || ""),
     aroma: csvToArr(d.aroma || ""),
     effects: csvToArr(d.effects || ""),
-    advice: d.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
+    advice:
+      d.advice ||
+      "Info éducative. Les effets varient selon la personne. Respecte la loi.",
   });
 
   addWizard.delete(chatId);
@@ -444,7 +510,9 @@ bot.onText(/^\/addform$/, (msg) => {
       "Ex: `Static Hash Premium`",
     {
       parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]] },
+      reply_markup: {
+        inline_keyboard: [[{ text: "❌ Annuler", callback_data: "wiz_cancel" }]],
+      },
     }
   );
 });
@@ -455,7 +523,8 @@ bot.onText(/^\/editform$/, async (msg) => {
 
   try {
     const cards = await dbListCards();
-    if (!cards.length) return bot.sendMessage(chatId, "Aucune fiche à modifier. (Utilise /seed ou /addform)");
+    if (!cards.length)
+      return bot.sendMessage(chatId, "Aucune fiche à modifier. (Utilise /seed ou /addform)");
 
     const buttons = cards.slice(0, 30).map((c) => [
       { text: `#${c.id} ${c.name}`, callback_data: `edit_pick_${c.id}` },
@@ -491,17 +560,16 @@ bot.onText(/^\/delform$/, async (msg) => {
   }
 });
 
-/* ================= CALLBACKS ================= */
+/* ================= CALLBACK QUERY ================= */
 bot.on("callback_query", async (query) => {
-  const msg = query.message;
-  const chatId = msg?.chat?.id;
+  const chatId = query.message?.chat?.id;
   try {
     await bot.answerCallbackQuery(query.id);
   } catch {}
 
   if (!chatId) return;
 
-  // ---- Info / Back / Reviews ----
+  // info / back / reviews
   if (query.data === "info") {
     return bot.sendPhoto(chatId, "https://picsum.photos/900/501", {
       caption:
@@ -516,7 +584,7 @@ bot.on("callback_query", async (query) => {
   if (query.data === "back") return sendStartMenu(chatId);
   if (query.data === "reviews") return bot.sendMessage(chatId, "⭐ Reviews en préparation...");
 
-  // ===== ADD FORM callbacks =====
+  // addform callbacks
   if (isAdmin(chatId)) {
     if (query.data === "wiz_cancel") return wizardCancel(chatId);
 
@@ -549,19 +617,19 @@ bot.on("callback_query", async (query) => {
     }
   }
 
-  // ===== EDIT/DEL callbacks =====
   if (!isAdmin(chatId)) return;
 
+  // cancel edit/del
   if (query.data === "edit_cancel") {
     editWizard.delete(chatId);
     return bot.sendMessage(chatId, "❌ Modification annulée.");
   }
-
   if (query.data === "del_cancel") {
     delWizard.delete(chatId);
     return bot.sendMessage(chatId, "❌ Suppression annulée.");
   }
 
+  // del pick / confirm
   if (query.data?.startsWith("del_pick_")) {
     try {
       const id = Number(query.data.replace("del_pick_", ""));
@@ -572,7 +640,9 @@ bot.on("callback_query", async (query) => {
 
       return bot.sendMessage(
         chatId,
-        `⚠️ Confirme la suppression :\n\n#${card.id} — ${card.name}\n(${card.type}${card.micron ? " • " + card.micron : ""})`,
+        `⚠️ Confirme la suppression :\n\n#${card.id} — ${card.name}\n(${card.type}${
+          card.micron ? " • " + card.micron : ""
+        })`,
         {
           reply_markup: {
             inline_keyboard: [
@@ -601,6 +671,7 @@ bot.on("callback_query", async (query) => {
     }
   }
 
+  // edit pick
   if (query.data?.startsWith("edit_pick_")) {
     try {
       const id = Number(query.data.replace("edit_pick_", ""));
@@ -610,11 +681,26 @@ bot.on("callback_query", async (query) => {
       return bot.sendMessage(chatId, `✅ Fiche sélectionnée: #${id}\nChoisis le champ :`, {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Nom", callback_data: `edit_field_${id}_name` }, { text: "Type", callback_data: `edit_field_${id}_type` }],
-            [{ text: "Micron", callback_data: `edit_field_${id}_micron` }, { text: "THC", callback_data: `edit_field_${id}_thc` }],
-            [{ text: "Description", callback_data: `edit_field_${id}_description` }, { text: "Image", callback_data: `edit_field_${id}_img` }],
-            [{ text: "Terpènes", callback_data: `edit_field_${id}_terpenes` }, { text: "Arômes", callback_data: `edit_field_${id}_aroma` }],
-            [{ text: "Effets", callback_data: `edit_field_${id}_effects` }, { text: "Conseils", callback_data: `edit_field_${id}_advice` }],
+            [
+              { text: "Nom", callback_data: `edit_field_${id}_name` },
+              { text: "Type", callback_data: `edit_field_${id}_type` },
+            ],
+            [
+              { text: "Micron", callback_data: `edit_field_${id}_micron` },
+              { text: "THC", callback_data: `edit_field_${id}_thc` },
+            ],
+            [
+              { text: "Description", callback_data: `edit_field_${id}_description` },
+              { text: "Image", callback_data: `edit_field_${id}_img` },
+            ],
+            [
+              { text: "Terpènes", callback_data: `edit_field_${id}_terpenes` },
+              { text: "Arômes", callback_data: `edit_field_${id}_aroma` },
+            ],
+            [
+              { text: "Effets", callback_data: `edit_field_${id}_effects` },
+              { text: "Conseils", callback_data: `edit_field_${id}_advice` },
+            ],
             [{ text: "❌ Annuler", callback_data: "edit_cancel" }],
           ],
         },
@@ -624,6 +710,7 @@ bot.on("callback_query", async (query) => {
     }
   }
 
+  // edit field
   if (query.data?.startsWith("edit_field_")) {
     const parts = query.data.split("_");
     const id = Number(parts[2]);
@@ -633,8 +720,14 @@ bot.on("callback_query", async (query) => {
       return bot.sendMessage(chatId, `🔁 Nouveau type pour #${id} :`, {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Hash", callback_data: `edit_type_${id}_hash` }, { text: "Weed", callback_data: `edit_type_${id}_weed` }],
-            [{ text: "Extraction", callback_data: `edit_type_${id}_extraction` }, { text: "WPFF", callback_data: `edit_type_${id}_wpff` }],
+            [
+              { text: "Hash", callback_data: `edit_type_${id}_hash` },
+              { text: "Weed", callback_data: `edit_type_${id}_weed` },
+            ],
+            [
+              { text: "Extraction", callback_data: `edit_type_${id}_extraction` },
+              { text: "WPFF", callback_data: `edit_type_${id}_wpff` },
+            ],
             [{ text: "❌ Annuler", callback_data: "edit_cancel" }],
           ],
         },
@@ -645,8 +738,14 @@ bot.on("callback_query", async (query) => {
       return bot.sendMessage(chatId, `🔁 Nouveau micron pour #${id} :`, {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "120u", callback_data: `edit_micron_${id}_120u` }, { text: "90u", callback_data: `edit_micron_${id}_90u` }],
-            [{ text: "73u", callback_data: `edit_micron_${id}_73u` }, { text: "45u", callback_data: `edit_micron_${id}_45u` }],
+            [
+              { text: "120u", callback_data: `edit_micron_${id}_120u` },
+              { text: "90u", callback_data: `edit_micron_${id}_90u` },
+            ],
+            [
+              { text: "73u", callback_data: `edit_micron_${id}_73u` },
+              { text: "45u", callback_data: `edit_micron_${id}_45u` },
+            ],
             [{ text: "Aucun", callback_data: `edit_micron_${id}_none` }],
             [{ text: "❌ Annuler", callback_data: "edit_cancel" }],
           ],
@@ -667,13 +766,14 @@ bot.on("callback_query", async (query) => {
     );
   }
 
+  // edit type
   if (query.data?.startsWith("edit_type_")) {
     try {
       const parts = query.data.split("_");
       const id = Number(parts[2]);
       const newType = parts[3];
-
       if (!allowedTypes.has(newType)) return bot.sendMessage(chatId, "❌ Type invalide.");
+
       await dbUpdateCard(id, { type: newType });
       return bot.sendMessage(chatId, `✅ Type mis à jour: #${id} → ${newType}`);
     } catch (e) {
@@ -681,6 +781,7 @@ bot.on("callback_query", async (query) => {
     }
   }
 
+  // edit micron
   if (query.data?.startsWith("edit_micron_")) {
     try {
       const parts = query.data.split("_");
