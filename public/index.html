@@ -10,6 +10,60 @@
 
     <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <!-- ✅ AJOUT: style shiny inline (on touche pas ton CSS) -->
+    <style>
+      .featured-wrap {
+        position: relative;
+        border-radius: 18px;
+        overflow: hidden;
+        border: 1px solid rgba(220, 53, 69, 0.6);
+        background: radial-gradient(1200px 400px at 20% 10%, rgba(255, 255, 255, 0.10), transparent 60%),
+          linear-gradient(180deg, rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0.95));
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 10px 30px rgba(0, 0, 0, 0.6);
+      }
+
+      .featured-shine::before {
+        content: "";
+        position: absolute;
+        top: -40%;
+        left: -60%;
+        width: 60%;
+        height: 180%;
+        background: linear-gradient(115deg, transparent 0%, rgba(255,255,255,0.18) 45%, transparent 70%);
+        transform: rotate(20deg);
+        animation: shineMove 2.8s linear infinite;
+        pointer-events: none;
+      }
+
+      @keyframes shineMove {
+        0% { left: -70%; }
+        100% { left: 130%; }
+      }
+
+      .featured-glow {
+        animation: glowPulse 2.2s ease-in-out infinite;
+      }
+
+      @keyframes glowPulse {
+        0%, 100% { box-shadow: 0 0 0 1px rgba(220,53,69,0.30), 0 10px 28px rgba(0,0,0,0.6); }
+        50% { box-shadow: 0 0 0 1px rgba(255,193,7,0.35), 0 0 22px rgba(255,193,7,0.18), 0 10px 28px rgba(0,0,0,0.6); }
+      }
+
+      .featured-badge {
+        font-weight: 700;
+        letter-spacing: .3px;
+      }
+
+      .featured-mini {
+        font-size: .9rem;
+        color: rgba(255,255,255,0.65);
+      }
+
+      .featured-btn {
+        border-radius: 14px;
+      }
+    </style>
   </head>
 
   <body class="bg-dark">
@@ -53,6 +107,27 @@
           <div class="col-lg-5">
             <div class="card bg-black text-white border border-danger rounded-4 shadow-sm">
               <div class="card-body">
+
+                <!-- ✅ AJOUT: FEATURED (Rare du moment) -->
+                <div id="featuredBox" class="featured-wrap featured-shine featured-glow p-3 mb-3" style="display:none;">
+                  <div class="d-flex align-items-start gap-3">
+                    <img id="featuredImg" src="" alt="" width="68" height="68" style="border-radius:14px; object-fit:cover; border:1px solid rgba(255,255,255,.12);" />
+                    <div class="flex-grow-1">
+                      <div class="d-flex justify-content-between gap-2 flex-wrap">
+                        <div>
+                          <div id="featuredTitle" class="badge text-bg-warning featured-badge mb-2">✨ Shiny du moment</div>
+                          <div id="featuredName" class="fw-bold">—</div>
+                          <div id="featuredMeta" class="featured-mini">—</div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                          <button id="featuredViewBtn" class="btn btn-sm btn-danger featured-btn">Voir</button>
+                        </div>
+                      </div>
+                      <div id="featuredLine" class="mt-2 featured-mini">🧬 —</div>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="d-flex align-items-center justify-content-between">
                   <h2 class="h5 mb-0">📚 Fiches</h2>
                   <span class="badge text-bg-danger" id="countBadge">0</span>
@@ -78,9 +153,6 @@
                   <button class="btn btn-sm btn-outline-warning chip" data-type="extraction">Extraction</button>
                   <button class="btn btn-sm btn-outline-info chip" data-type="wpff">WPFF</button>
                 </div>
-
-                <!-- ✅ SUB FILTER (microns / weed kind) -->
-                <div id="subchips" class="mt-2 d-flex flex-wrap gap-2" style="display:none;"></div>
 
                 <!-- LIST -->
                 <div class="mt-3 list-group list-group-flush" id="list"></div>
@@ -141,8 +213,7 @@ Ici tu verras la fiche complète (terpènes, arômes, effets, conseils).
                 </div>
 
                 <div class="mt-3 text-end">
-                  <small class="text-secondary"><h>POKETERPS 1.0
-                  </h></small>
+                  <small class="text-secondary"><h>POKETERPS 1.0</h></small>
                 </div>
               </div>
             </div>
@@ -158,8 +229,6 @@ Ici tu verras la fiche complète (terpènes, arômes, effets, conseils).
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
-
-    <!-- IMPORTANT: ton JS fiches -->
     <script src="js/pokedex.js"></script>
 
     <script>

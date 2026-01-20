@@ -97,6 +97,47 @@ async function dbDeleteCard(id) {
   if (error) throw error;
 }
 
+/* ================== FEATURED (Rare/Shiny du moment) ================== */
+async function dbGetFeatured() {
+  assertSupabase();
+  const { data, error } = await sb
+    .from("cards")
+    .select("*")
+    .eq("is_featured", true)
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function dbSetFeatured(id, title) {
+  assertSupabase();
+
+  // 1) enlever l'ancien
+  const { error: e1 } = await sb
+    .from("cards")
+    .update({ is_featured: false, featured_title: null })
+    .eq("is_featured", true);
+  if (e1) throw e1;
+
+  // 2) activer le nouveau
+  const patch = { is_featured: true, featured_title: title || "✨ Shiny du moment" };
+  const { data, error: e2 } = await sb.from("cards").update(patch).eq("id", id).select("*").single();
+  if (e2) throw e2;
+
+  return data;
+}
+
+async function dbUnsetFeatured() {
+  assertSupabase();
+  const { error } = await sb
+    .from("cards")
+    .update({ is_featured: false, featured_title: null })
+    .eq("is_featured", true);
+  if (error) throw error;
+}
+
 /* ================== API POUR LA MINI-APP ================== */
 app.get("/api/cards", async (req, res) => {
   try {
@@ -111,6 +152,22 @@ app.get("/api/cards", async (req, res) => {
     res.json(mapped);
   } catch (e) {
     console.error("❌ /api/cards:", e.message);
+    res.status(500).json({ error: "db_error", message: e.message });
+  }
+});
+
+/* ================== API FEATURED (Rare du moment) ================== */
+app.get("/api/featured", async (req, res) => {
+  try {
+    const c = await dbGetFeatured();
+    if (!c) return res.json(null);
+
+    res.json({
+      ...c,
+      desc: c.description ?? "—", // compat front
+    });
+  } catch (e) {
+    console.error("❌ /api/featured:", e.message);
     res.status(500).json({ error: "db_error", message: e.message });
   }
 });
@@ -194,6 +251,10 @@ bot.onText(/^\/adminhelp$/, (msg) => {
       "✅ /delform *(suppression guidée)*\n" +
       "✅ /edit id field value\n" +
       "✅ /del id\n\n" +
+      "✨ *Rare du moment*\n" +
+      "✅ /rare id (titre optionnel)\n" +
+      "✅ /unrare\n" +
+      "✅ /rareinfo\n\n" +
       "*fields /edit:* name,type,micron,weed_kind,thc,description,img,advice,terpenes,aroma,effects",
     { parse_mode: "Markdown" }
   );
@@ -210,6 +271,78 @@ bot.onText(/^\/dbtest$/, async (msg) => {
     bot.sendMessage(chatId, "✅ Supabase OK (table cards accessible)");
   } catch (e) {
     bot.sendMessage(chatId, `❌ Supabase KO: ${e.message}`);
+  }
+});
+
+/* ====== Rare du moment: commandes ====== */
+bot.onText(/^\/rare\s+(\d+)(?:\s+([\s\S]+))?$/m, async (msg, match) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    const id = Number(match[1]);
+    const title = (match[2] || "").trim();
+
+    const card = await dbGetCard(id);
+    if (!card) return bot.sendMessage(chatId, "❌ ID introuvable.");
+
+    const updated = await dbSetFeatured(id, title || "✨ Shiny du moment");
+
+    const extra =
+      updated.type === "weed"
+        ? updated.weed_kind
+          ? ` • ${updated.weed_kind}`
+          : ""
+        : updated.micron
+          ? ` • ${updated.micron}`
+          : "";
+
+    bot.sendMessage(
+      chatId,
+      `✨ *Rare du moment activée !*\n\n#${updated.id} — *${updated.name}*\n${typeLabel(updated.type)}${extra}\nTitre: *${updated.featured_title || "✨ Shiny du moment"}*`,
+      { parse_mode: "Markdown" }
+    );
+  } catch (e) {
+    bot.sendMessage(chatId, `❌ /rare: ${e.message}`);
+  }
+});
+
+bot.onText(/^\/unrare$/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    await dbUnsetFeatured();
+    bot.sendMessage(chatId, "✅ Rare du moment désactivée.");
+  } catch (e) {
+    bot.sendMessage(chatId, `❌ /unrare: ${e.message}`);
+  }
+});
+
+bot.onText(/^\/rareinfo$/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    const c = await dbGetFeatured();
+    if (!c) return bot.sendMessage(chatId, "Aucune Rare du moment actuellement.");
+
+    const extra =
+      c.type === "weed"
+        ? c.weed_kind
+          ? ` • ${c.weed_kind}`
+          : ""
+        : c.micron
+          ? ` • ${c.micron}`
+          : "";
+
+    bot.sendMessage(
+      chatId,
+      `✨ Rare actuelle:\n#${c.id} — ${c.name}\n${typeLabel(c.type)}${extra}\nTitre: ${c.featured_title || "✨ Shiny du moment"}`,
+      { parse_mode: "Markdown" }
+    );
+  } catch (e) {
+    bot.sendMessage(chatId, `❌ /rareinfo: ${e.message}`);
   }
 });
 

@@ -13,7 +13,6 @@
       name: "Static Hash (exemple)",
       type: "hash",
       micron: null,
-      weed_kind: null,
       thc: "THC: 35–55% (exemple)",
       desc: "Hash sec, texture sableuse, très parfumé.",
       img: "https://i.imgur.com/0HqWQvH.png",
@@ -30,16 +29,12 @@
   const typeLabel = (t) =>
     ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF" }[t] || t);
 
-  const weedKindLabel = (k) =>
-    ({ indica: "Indica", sativa: "Sativa", hybrid: "Hybrid" }[k] || k);
-
   const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
 
   const safeStr = (v) => (v == null ? "" : String(v));
   const norm = (v) => safeStr(v).trim().toLowerCase();
 
   function cardDesc(c) {
-    // compat: API peut renvoyer desc OU description
     return c.desc ?? c.description ?? c.profile ?? "—";
   }
 
@@ -60,8 +55,14 @@
   const pokeThc = $("pokeThc");
   const pokeDesc = $("pokeDesc");
 
-  // 👇 conteneur sub-chips (on le crée si absent)
-  let subchipsEl = $("subchips");
+  // ✅ FEATURED UI
+  const featuredBox = $("featuredBox");
+  const featuredImg = $("featuredImg");
+  const featuredTitle = $("featuredTitle");
+  const featuredName = $("featuredName");
+  const featuredMeta = $("featuredMeta");
+  const featuredLine = $("featuredLine");
+  const featuredViewBtn = $("featuredViewBtn");
 
   if (!listEl || !countBadge || !searchInput) {
     console.error("❌ IDs HTML manquants (list, countBadge, searchInput)");
@@ -69,10 +70,10 @@
   }
 
   /* ================= STATE ================= */
-  let activeType = "all";     // all|hash|weed|extraction|wpff
-  let activeSub = "all";      // all|120u|90u|73u|45u|none  OU all|indica|sativa|hybrid
+  let activeType = "all";
   let selected = null;
-  let pokedex = []; // sera rempli par l’API
+  let pokedex = [];
+  let featured = null;
 
   /* ================= LOAD FROM API ================= */
   async function loadCards() {
@@ -86,7 +87,6 @@
         name: c.name || "Sans nom",
         type: c.type || "hash",
         micron: c.micron ?? null,
-        weed_kind: c.weed_kind ?? null, // ✅ IMPORTANT
         thc: c.thc || "—",
         desc: cardDesc(c),
         img: c.img || "https://i.imgur.com/0HqWQvH.png",
@@ -94,108 +94,67 @@
         aroma: Array.isArray(c.aroma) ? c.aroma : [],
         effects: Array.isArray(c.effects) ? c.effects : [],
         advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
+        is_featured: Boolean(c.is_featured),
+        featured_title: c.featured_title || null,
       }));
 
-      if (!mapped.length) {
-        console.warn("⚠️ API OK mais aucune fiche. Fallback activé.");
-        pokedex = fallbackPokedex;
-      } else {
-        pokedex = mapped;
-      }
+      pokedex = mapped.length ? mapped : fallbackPokedex;
     } catch (e) {
       console.error("❌ Impossible de charger /api/cards :", e);
       pokedex = fallbackPokedex;
     }
   }
 
-  /* ================= SUBCHIPS UI ================= */
-  function ensureSubchipsContainer() {
-    if (subchipsEl) return subchipsEl;
-
-    // essaie de l’injecter juste après la rangée de chips principale
-    // on cherche le parent des boutons .chip existants
-    const mainChips = document.querySelector(".chip")?.closest(".d-flex");
-    if (mainChips && mainChips.parentElement) {
-      const wrap = document.createElement("div");
-      wrap.id = "subchips";
-      wrap.className = "mt-2 d-flex flex-wrap gap-2";
-      mainChips.parentElement.appendChild(wrap);
-      subchipsEl = wrap;
-      return subchipsEl;
-    }
-
-    // sinon on l’ajoute en haut
-    const fallback = document.createElement("div");
-    fallback.id = "subchips";
-    fallback.className = "mt-2 d-flex flex-wrap gap-2";
-    document.body.prepend(fallback);
-    subchipsEl = fallback;
-    return subchipsEl;
-  }
-
-  function subchipsConfigForType(t) {
-    if (t === "weed") {
-      return [
-        { key: "all", label: "Tous" },
-        { key: "indica", label: "Indica" },
-        { key: "sativa", label: "Sativa" },
-        { key: "hybrid", label: "Hybrid" },
-      ];
-    }
-    if (t === "hash" || t === "extraction" || t === "wpff") {
-      return [
-        { key: "all", label: "Tous" },
-        { key: "120u", label: "120u" },
-        { key: "90u", label: "90u" },
-        { key: "73u", label: "73u" },
-        { key: "45u", label: "45u" },
-        { key: "none", label: "Aucun" },
-      ];
-    }
-    return null; // all => pas de subchips
-  }
-
-  function renderSubchips() {
-    const wrap = ensureSubchipsContainer();
-    const cfg = subchipsConfigForType(activeType);
-
-    // si "all" => on cache
-    if (!cfg) {
-      wrap.innerHTML = "";
-      wrap.style.display = "none";
-      activeSub = "all";
-      return;
-    }
-
-    wrap.style.display = "flex";
-    wrap.innerHTML = "";
-
-    cfg.forEach((c) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "btn btn-sm btn-outline-light chip-sub";
-      btn.dataset.sub = c.key;
-      btn.textContent = c.label;
-
-      if (activeSub === c.key) {
-        btn.classList.add("active");
-        btn.classList.remove("btn-outline-light");
-        btn.classList.add("btn-danger");
+  async function loadFeatured() {
+    // ✅ si endpoint pas dispo, on ignore
+    try {
+      const res = await fetch("/api/featured", { cache: "no-store" });
+      if (!res.ok) return;
+      const c = await res.json();
+      if (!c) {
+        featured = null;
+        if (featuredBox) featuredBox.style.display = "none";
+        return;
       }
 
-      btn.addEventListener("click", () => {
-        activeSub = c.key;
-        renderSubchips();
-        renderList();
-      });
+      featured = {
+        id: Number(c.id) || c.id,
+        name: c.name || "Sans nom",
+        type: c.type || "hash",
+        micron: c.micron ?? null,
+        thc: c.thc || "—",
+        desc: cardDesc(c),
+        img: c.img || "https://i.imgur.com/0HqWQvH.png",
+        terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
+        aroma: Array.isArray(c.aroma) ? c.aroma : [],
+        effects: Array.isArray(c.effects) ? c.effects : [],
+        advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
+        featured_title: c.featured_title || "✨ Shiny du moment",
+      };
 
-      wrap.appendChild(btn);
-    });
+      renderFeatured();
+    } catch (e) {
+      featured = null;
+      if (featuredBox) featuredBox.style.display = "none";
+    }
   }
 
-  function resetSubFilterForType() {
-    activeSub = "all";
-    renderSubchips();
+  function renderFeatured() {
+    if (!featuredBox || !featured) return;
+    featuredBox.style.display = "block";
+
+    const micronTxt = featured.micron ? ` • ${featured.micron}` : "";
+    if (featuredImg) featuredImg.src = featured.img;
+    if (featuredTitle) featuredTitle.textContent = featured.featured_title || "✨ Shiny du moment";
+    if (featuredName) featuredName.textContent = featured.name;
+    if (featuredMeta) featuredMeta.textContent = `#${featured.id} • ${typeLabel(featured.type)}${micronTxt}`;
+    if (featuredLine) featuredLine.textContent = `🧬 ${cardDesc(featured)}`;
+
+    featuredViewBtn?.addEventListener("click", () => {
+      selectCard(featured);
+      // petit confort : scroll vers détails
+      document.getElementById("pokeName")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   /* ================= FILTERS ================= */
@@ -206,7 +165,6 @@
       card.name,
       card.type,
       card.micron,
-      card.weed_kind,
       card.thc,
       cardDesc(card),
       ...(card.terpenes || []),
@@ -220,27 +178,11 @@
     return hay.includes(q);
   }
 
-  function matchesSubFilter(card) {
-    if (activeType === "all") return true;
-    if (activeSub === "all") return true;
-
-    if (activeType === "weed") {
-      // weed_kind filter
-      return norm(card.weed_kind) === activeSub;
-    }
-
-    // micron filter (hash/extraction/wpff)
-    if (activeSub === "none") {
-      return !norm(card.micron);
-    }
-    return norm(card.micron) === activeSub;
-  }
-
   function filteredList() {
     const q = norm(searchInput.value);
     return pokedex.filter((p) => {
       const typeOk = activeType === "all" || p.type === activeType;
-      return typeOk && matchesSubFilter(p) && matchesQuery(p, q);
+      return typeOk && matchesQuery(p, q);
     });
   }
 
@@ -260,20 +202,13 @@
       btn.className =
         "list-group-item list-group-item-action bg-black text-white border-secondary d-flex align-items-center gap-2 rounded-3 mb-2";
 
-      const extra =
-        p.type === "weed"
-          ? p.weed_kind
-            ? ` • ${weedKindLabel(norm(p.weed_kind))}`
-            : ""
-          : p.micron
-            ? ` • ${p.micron}`
-            : "";
+      const micronTxt = p.micron ? ` • ${p.micron}` : "";
 
       btn.innerHTML = `
         <img src="${p.img}" width="40" height="40" style="object-fit:cover;border-radius:8px;" />
         <div class="flex-grow-1 text-start">
           <div class="fw-semibold">${p.name}</div>
-          <div class="small text-secondary">#${p.id} • ${typeLabel(p.type)}${extra}</div>
+          <div class="small text-secondary">#${p.id} • ${typeLabel(p.type)}${micronTxt}</div>
         </div>
         <span class="badge text-bg-danger">Voir</span>
       `;
@@ -289,17 +224,7 @@
 
     if (pokeName) pokeName.textContent = p.name;
     if (pokeId) pokeId.textContent = `#${p.id}`;
-
-    const extra =
-      p.type === "weed"
-        ? p.weed_kind
-          ? ` • ${weedKindLabel(norm(p.weed_kind))}`
-          : ""
-        : p.micron
-          ? ` • ${p.micron}`
-          : "";
-
-    if (pokeType) pokeType.textContent = `${typeLabel(p.type)}${extra}`;
+    if (pokeType) pokeType.textContent = `${typeLabel(p.type)}${p.micron ? " • " + p.micron : ""}`;
     if (pokeThc) pokeThc.textContent = p.thc;
 
     if (pokeDesc) {
@@ -327,16 +252,11 @@
     renderList();
   });
 
-  // chips principales (type)
   document.querySelectorAll(".chip").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".chip").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       activeType = btn.dataset.type;
-
-      // reset subfilter quand on change de type
-      resetSubFilterForType();
-
       renderList();
     });
   });
@@ -344,24 +264,19 @@
   randomBtn?.addEventListener("click", () => {
     const items = filteredList();
     if (!items.length) return;
+
+    // ✅ petit fun: 12% chance d’aller sur la rare
+    if (featured && Math.random() < 0.12) return selectCard(featured);
+
     selectCard(items[Math.floor(Math.random() * items.length)]);
   });
 
   shareBtn?.addEventListener("click", async () => {
     if (!selected) return;
 
-    const extra =
-      selected.type === "weed"
-        ? selected.weed_kind
-          ? ` • ${weedKindLabel(norm(selected.weed_kind))}`
-          : ""
-        : selected.micron
-          ? ` • ${selected.micron}`
-          : "";
-
     const shareText =
       `🧬 ${selected.name} (#${selected.id})\n` +
-      `Catégorie: ${typeLabel(selected.type)}${extra}\n` +
+      `Catégorie: ${typeLabel(selected.type)}${selected.micron ? " • " + selected.micron : ""}\n` +
       `${selected.thc}\n\n` +
       `🌿 Terpènes: ${formatList(selected.terpenes)}\n` +
       `👃 Arômes: ${formatList(selected.aroma)}\n` +
@@ -393,7 +308,7 @@
   /* ================= INIT ================= */
   (async () => {
     await loadCards();
-    renderSubchips(); // important: cache si all
+    await loadFeatured();
     renderList();
   })();
 })();
