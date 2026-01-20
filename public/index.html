@@ -11,7 +11,7 @@
     <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-    <!-- ✅ AJOUT: style shiny inline (on touche pas ton CSS) -->
+    <!-- ✅ AJOUT: style shiny + sparkles + skeleton inline (on touche pas ton CSS) -->
     <style>
       .featured-wrap {
         position: relative;
@@ -50,19 +50,52 @@
         50% { box-shadow: 0 0 0 1px rgba(255,193,7,0.35), 0 0 22px rgba(255,193,7,0.18), 0 10px 28px rgba(0,0,0,0.6); }
       }
 
-      .featured-badge {
-        font-weight: 700;
-        letter-spacing: .3px;
+      .featured-badge { font-weight: 800; letter-spacing: .3px; }
+      .featured-mini { font-size: .9rem; color: rgba(255,255,255,0.65); }
+      .featured-btn { border-radius: 14px; }
+
+      /* ✅ sparkles */
+      .sparkles {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.9;
+      }
+      .sparkle {
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        transform: rotate(45deg);
+        background: rgba(255, 193, 7, 0.85);
+        filter: drop-shadow(0 0 6px rgba(255,193,7,0.35));
+        animation: sparklePop 1.8s ease-in-out infinite;
+      }
+      @keyframes sparklePop {
+        0% { transform: rotate(45deg) scale(0.6); opacity: 0.15; }
+        45% { transform: rotate(45deg) scale(1.15); opacity: 0.95; }
+        100% { transform: rotate(45deg) scale(0.75); opacity: 0.25; }
       }
 
-      .featured-mini {
-        font-size: .9rem;
-        color: rgba(255,255,255,0.65);
+      /* ✅ skeleton loading */
+      .skeleton {
+        background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.14), rgba(255,255,255,.06));
+        background-size: 240% 100%;
+        animation: sk 1.1s ease-in-out infinite;
+        border-radius: 12px;
       }
+      @keyframes sk {
+        0% { background-position: 0% 0; }
+        100% { background-position: 100% 0; }
+      }
+      .sk-row { height: 56px; margin-bottom: 10px; border-radius: 14px; }
+      .sk-line { height: 12px; margin-bottom: 10px; border-radius: 10px; }
+      .sk-img { height: 220px; border-radius: 18px; }
+      .muted { opacity: .7; }
 
-      .featured-btn {
-        border-radius: 14px;
-      }
+      /* ✅ sub chips container */
+      #subChips { display:none; gap:8px; flex-wrap:wrap; margin-top:10px; }
+      #subChips .btn { border-radius: 999px; }
     </style>
   </head>
 
@@ -108,14 +141,20 @@
             <div class="card bg-black text-white border border-danger rounded-4 shadow-sm">
               <div class="card-body">
 
-                <!-- ✅ AJOUT: FEATURED (Rare du moment) -->
+                <!-- ✅ FEATURED (Rare du moment) -->
                 <div id="featuredBox" class="featured-wrap featured-shine featured-glow p-3 mb-3" style="display:none;">
+                  <div id="sparkles" class="sparkles"></div>
+
                   <div class="d-flex align-items-start gap-3">
-                    <img id="featuredImg" src="" alt="" width="68" height="68" style="border-radius:14px; object-fit:cover; border:1px solid rgba(255,255,255,.12);" />
+                    <img id="featuredImg" src="" alt="" width="68" height="68"
+                      style="border-radius:14px; object-fit:cover; border:1px solid rgba(255,255,255,.12);" />
                     <div class="flex-grow-1">
                       <div class="d-flex justify-content-between gap-2 flex-wrap">
                         <div>
-                          <div id="featuredTitle" class="badge text-bg-warning featured-badge mb-2">✨ Shiny du moment</div>
+                          <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <div id="featuredTitle" class="badge text-bg-warning featured-badge mb-2">✨ Shiny du moment</div>
+                            <div id="featuredCount" class="badge text-bg-danger mb-2 muted" style="display:none;">Rare #—</div>
+                          </div>
                           <div id="featuredName" class="fw-bold">—</div>
                           <div id="featuredMeta" class="featured-mini">—</div>
                         </div>
@@ -126,6 +165,14 @@
                       <div id="featuredLine" class="mt-2 featured-mini">🧬 —</div>
                     </div>
                   </div>
+                </div>
+
+                <!-- ✅ skeleton list loading -->
+                <div id="listSkeleton" style="display:none;">
+                  <div class="skeleton sk-row"></div>
+                  <div class="skeleton sk-row"></div>
+                  <div class="skeleton sk-row"></div>
+                  <div class="skeleton sk-row"></div>
                 </div>
 
                 <div class="d-flex align-items-center justify-content-between">
@@ -154,8 +201,8 @@
                   <button class="btn btn-sm btn-outline-info chip" data-type="wpff">WPFF</button>
                 </div>
 
-                <!-- ✅ AJOUT: SOUS-CATÉGORIES DYNAMIQUES -->
-                <div id="subChips" class="mt-2 d-flex flex-wrap gap-2"></div>
+                <!-- ✅ sub-catégories -->
+                <div id="subChips"></div>
 
                 <!-- LIST -->
                 <div class="mt-3 list-group list-group-flush" id="list"></div>
@@ -187,30 +234,48 @@
 
                 <hr class="border-secondary my-3" />
 
-                <div class="row g-3 align-items-center">
-                  <div class="col-md-5">
-                    <div class="p-3 rounded-4 bg-dark border border-secondary text-center">
-                      <img id="pokeImg" src="" alt="" class="img-fluid" style="max-height: 220px; display:none;" />
-                      <div id="placeholder" class="text-secondary">👈 Choisis dans la liste</div>
+                <!-- ✅ skeleton details loading -->
+                <div id="detailsSkeleton" style="display:none;">
+                  <div class="row g-3 align-items-center">
+                    <div class="col-md-5">
+                      <div class="skeleton sk-img"></div>
+                    </div>
+                    <div class="col-md-7">
+                      <div class="skeleton sk-line" style="width:60%;"></div>
+                      <div class="skeleton sk-line" style="width:45%;"></div>
+                      <div class="skeleton sk-line" style="width:80%;"></div>
+                      <div class="skeleton sk-line" style="width:90%;"></div>
+                      <div class="skeleton sk-line" style="width:70%;"></div>
                     </div>
                   </div>
+                </div>
 
-                  <div class="col-md-7">
-                    <div class="p-3 rounded-4 bg-dark border border-secondary">
-                      <div class="d-flex justify-content-between">
-                        <span class="text-secondary">Catégorie</span>
-                        <span id="pokeType" class="fw-semibold">—</span>
+                <div id="detailsReal">
+                  <div class="row g-3 align-items-center">
+                    <div class="col-md-5">
+                      <div class="p-3 rounded-4 bg-dark border border-secondary text-center">
+                        <img id="pokeImg" src="" alt="" class="img-fluid" style="max-height: 220px; display:none;" />
+                        <div id="placeholder" class="text-secondary">👈 Choisis dans la liste</div>
                       </div>
-                      <div class="d-flex justify-content-between mt-2">
-                        <span class="text-secondary">THC</span>
-                        <span id="pokeThc" class="fw-semibold">—</span>
-                      </div>
+                    </div>
 
-                      <hr class="border-secondary my-3" />
+                    <div class="col-md-7">
+                      <div class="p-3 rounded-4 bg-dark border border-secondary">
+                        <div class="d-flex justify-content-between">
+                          <span class="text-secondary">Catégorie</span>
+                          <span id="pokeType" class="fw-semibold">—</span>
+                        </div>
+                        <div class="d-flex justify-content-between mt-2">
+                          <span class="text-secondary">THC</span>
+                          <span id="pokeThc" class="fw-semibold">—</span>
+                        </div>
 
-                      <pre id="pokeDesc" class="mb-0 text-secondary" style="white-space: pre-wrap; font-family: inherit;">
+                        <hr class="border-secondary my-3" />
+
+                        <pre id="pokeDesc" class="mb-0 text-secondary" style="white-space: pre-wrap; font-family: inherit;">
 Ici tu verras la fiche complète (terpènes, arômes, effets, conseils).
-                      </pre>
+                        </pre>
+                      </div>
                     </div>
                   </div>
                 </div>
