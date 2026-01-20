@@ -6,100 +6,21 @@
     tg.expand();
   }
 
-  /* ================= DATA (HASH / WEED / EXTRACTION / WPFF) ================= */
-  // ⚠️ Les valeurs THC/effets sont indicatives. À adapter selon tes fiches.
-  const pokedex = [
-    // ===== HASH =====
+  /* ================= FALLBACK DATA (si API KO) ================= */
+  const fallbackPokedex = [
     {
       id: 101,
       name: "Static Hash (exemple)",
       type: "hash",
+      micron: null,
       thc: "THC: 35–55% (exemple)",
       desc: "Hash sec, texture sableuse, très parfumé.",
       img: "https://i.imgur.com/0HqWQvH.png",
       terpenes: ["Myrcene", "Caryophyllene"],
       aroma: ["Terreux", "Épicé", "Boisé"],
       effects: ["Relax (ressenti)", "Calme (ressenti)"],
-      advice: "Commence bas. Évite de mélanger. Respecte la législation."
+      advice: "Commence bas. Évite de mélanger. Respecte la législation.",
     },
-    {
-      id: 102,
-      name: "Dry Sift (exemple)",
-      type: "hash",
-      thc: "THC: 30–50% (exemple)",
-      desc: "Tamisage à sec, rendu 'kief' pressé ou non.",
-      img: "https://i.imgur.com/0HqWQvH.png",
-      terpenes: ["Pinene", "Limonene"],
-      aroma: ["Frais", "Pin", "Agrumes"],
-      effects: ["Équilibré (ressenti)"],
-      advice: "Prends ton temps. Hydrate-toi."
-    },
-
-    // ===== WEED =====
-    {
-      id: 201,
-      name: "Gelato (exemple)",
-      type: "weed",
-      thc: "THC: 20–26% (exemple)",
-      desc: "Profil sucré/crémeux, populaire.",
-      img: "https://i.imgur.com/0HqWQvH.png",
-      terpenes: ["Limonene", "Caryophyllene", "Myrcene"],
-      aroma: ["Sucré", "Crémeux", "Agrumes"],
-      effects: ["Relax (ressenti)", "Bonne humeur (ressenti)"],
-      advice: "Évite de conduire. Ne mélange pas. Respecte les lois."
-    },
-    {
-      id: 202,
-      name: "Blue Dream (exemple)",
-      type: "weed",
-      thc: "THC: 18–24% (exemple)",
-      desc: "Profil fruité + pin, souvent décrit équilibré.",
-      img: "https://i.imgur.com/0HqWQvH.png",
-      terpenes: ["Myrcene", "Pinene", "Caryophyllene"],
-      aroma: ["Fruité", "Pin", "Sucré léger"],
-      effects: ["Équilibré (ressenti)", "Créatif (ressenti)"],
-      advice: "Commence bas, attends 10–15 min. Hydrate-toi."
-    },
-
-    // ===== EXTRACTION =====
-    {
-      id: 301,
-      name: "Rosin (exemple)",
-      type: "extraction",
-      thc: "THC: 60–80% (exemple)",
-      desc: "Extraction sans solvants (pression + chaleur).",
-      img: "https://i.imgur.com/0HqWQvH.png",
-      terpenes: ["Limonene", "Myrcene"],
-      aroma: ["Très aromatique", "Fruité", "Frais"],
-      effects: ["Puissant (ressenti)"],
-      advice: "Très concentré: micro-dose recommandé. Attends avant de reprendre."
-    },
-    {
-      id: 302,
-      name: "BHO / Wax (exemple)",
-      type: "extraction",
-      thc: "THC: 70–90% (exemple)",
-      desc: "Concentré très puissant (solvants).",
-      img: "https://i.imgur.com/0HqWQvH.png",
-      terpenes: ["Caryophyllene", "Pinene"],
-      aroma: ["Épicé", "Pin", "Fort"],
-      effects: ["Très puissant (ressenti)"],
-      advice: "Info éducative. Risques accrus si surdosage. Ne mélange pas."
-    },
-
-    // ===== WPFF =====
-    {
-      id: 401,
-      name: "WPFF Rosin (exemple)",
-      type: "wpff",
-      thc: "THC: 60–80% (exemple)",
-      desc: "WPFF = Whole Plant Fresh Frozen. Profil terpénique souvent 'ultra fresh'.",
-      img: "https://i.imgur.com/0HqWQvH.png",
-      terpenes: ["Limonene", "Pinene", "Myrcene"],
-      aroma: ["Frais", "Vivant", "Agrumes"],
-      effects: ["Très aromatique (ressenti)", "Puissant (ressenti)"],
-      advice: "Concentré: commence très bas. Attends 10–15 min avant de reprendre."
-    }
   ];
 
   /* ================= HELPERS ================= */
@@ -109,6 +30,14 @@
     ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF" }[t] || t);
 
   const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
+
+  const safeStr = (v) => (v == null ? "" : String(v));
+  const norm = (v) => safeStr(v).trim().toLowerCase();
+
+  function cardDesc(c) {
+    // compat: API peut renvoyer desc OU description
+    return c.desc ?? c.description ?? c.profile ?? "—";
+  }
 
   /* ================= ELEMENTS ================= */
   const listEl = $("list");
@@ -135,14 +64,68 @@
   /* ================= STATE ================= */
   let activeType = "all";
   let selected = null;
+  let pokedex = []; // sera rempli par l’API
+
+  /* ================= LOAD FROM API ================= */
+  async function loadCards() {
+    try {
+      const res = await fetch("/api/cards", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const mapped = (Array.isArray(data) ? data : []).map((c) => ({
+        id: Number(c.id) || c.id,
+        name: c.name || "Sans nom",
+        type: c.type || "hash",
+        micron: c.micron ?? null,
+        thc: c.thc || "—",
+        desc: cardDesc(c),
+        img: c.img || "https://i.imgur.com/0HqWQvH.png",
+        terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
+        aroma: Array.isArray(c.aroma) ? c.aroma : [],
+        effects: Array.isArray(c.effects) ? c.effects : [],
+        advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
+      }));
+
+      if (!mapped.length) {
+        console.warn("⚠️ API OK mais aucune fiche. Fallback activé.");
+        pokedex = fallbackPokedex;
+      } else {
+        pokedex = mapped;
+      }
+    } catch (e) {
+      console.error("❌ Impossible de charger /api/cards :", e);
+      pokedex = fallbackPokedex;
+    }
+  }
 
   /* ================= FILTERS ================= */
+  function matchesQuery(card, q) {
+    if (!q) return true;
+
+    const hay = [
+      card.name,
+      card.type,
+      card.micron,
+      card.thc,
+      cardDesc(card),
+      ...(card.terpenes || []),
+      ...(card.aroma || []),
+      ...(card.effects || []),
+      card.advice,
+    ]
+      .map((x) => norm(x))
+      .join(" ");
+
+    return hay.includes(q);
+  }
+
   function filteredList() {
-    const q = searchInput.value.trim().toLowerCase();
-    return pokedex.filter((p) =>
-      (activeType === "all" || p.type === activeType) &&
-      (!q || p.name.toLowerCase().includes(q))
-    );
+    const q = norm(searchInput.value);
+    return pokedex.filter((p) => {
+      const typeOk = activeType === "all" || p.type === activeType;
+      return typeOk && matchesQuery(p, q);
+    });
   }
 
   /* ================= RENDER LIST ================= */
@@ -161,31 +144,33 @@
       btn.className =
         "list-group-item list-group-item-action bg-black text-white border-secondary d-flex align-items-center gap-2 rounded-3 mb-2";
 
+      const micronTxt = p.micron ? ` • ${p.micron}` : "";
+
       btn.innerHTML = `
-        <img src="${p.img}" width="40" height="40" />
+        <img src="${p.img}" width="40" height="40" style="object-fit:cover;border-radius:8px;" />
         <div class="flex-grow-1 text-start">
           <div class="fw-semibold">${p.name}</div>
-          <div class="small text-secondary">#${p.id} • ${typeLabel(p.type)}</div>
+          <div class="small text-secondary">#${p.id} • ${typeLabel(p.type)}${micronTxt}</div>
         </div>
         <span class="badge text-bg-danger">Voir</span>
       `;
 
-      btn.onclick = () => selectPokemon(p);
+      btn.onclick = () => selectCard(p);
       listEl.appendChild(btn);
     });
   }
 
   /* ================= SELECT ================= */
-  function selectPokemon(p) {
+  function selectCard(p) {
     selected = p;
 
     if (pokeName) pokeName.textContent = p.name;
     if (pokeId) pokeId.textContent = `#${p.id}`;
-    if (pokeType) pokeType.textContent = typeLabel(p.type);
+    if (pokeType) pokeType.textContent = `${typeLabel(p.type)}${p.micron ? " • " + p.micron : ""}`;
     if (pokeThc) pokeThc.textContent = p.thc;
 
     if (pokeDesc) {
-      const line1 = `🧬 Profil: ${p.desc || "—"}`;
+      const line1 = `🧬 Profil: ${cardDesc(p) || "—"}`;
       const line2 = `🌿 Terpènes: ${formatList(p.terpenes)}`;
       const line3 = `👃 Arômes: ${formatList(p.aroma)}`;
       const line4 = `🧠 Effets (ressenti): ${formatList(p.effects)}`;
@@ -221,7 +206,7 @@
   randomBtn?.addEventListener("click", () => {
     const items = filteredList();
     if (!items.length) return;
-    selectPokemon(items[Math.floor(Math.random() * items.length)]);
+    selectCard(items[Math.floor(Math.random() * items.length)]);
   });
 
   shareBtn?.addEventListener("click", async () => {
@@ -229,11 +214,12 @@
 
     const shareText =
       `🧬 ${selected.name} (#${selected.id})\n` +
-      `Catégorie: ${typeLabel(selected.type)}\n` +
+      `Catégorie: ${typeLabel(selected.type)}${selected.micron ? " • " + selected.micron : ""}\n` +
       `${selected.thc}\n\n` +
       `🌿 Terpènes: ${formatList(selected.terpenes)}\n` +
       `👃 Arômes: ${formatList(selected.aroma)}\n` +
       `🧠 Effets (ressenti): ${formatList(selected.effects)}\n\n` +
+      `🧬 Profil: ${cardDesc(selected)}\n\n` +
       `⚠️ ${selected.advice || "Info éducative. Les effets varient."}`;
 
     try {
@@ -248,7 +234,7 @@
     tg?.showPopup({
       title: "Partager",
       message: "Fiche copiée ✅",
-      buttons: [{ type: "ok" }]
+      buttons: [{ type: "ok" }],
     });
   });
 
@@ -258,5 +244,8 @@
   });
 
   /* ================= INIT ================= */
-  renderList();
+  (async () => {
+    await loadCards();
+    renderList();
+  })();
 })();
