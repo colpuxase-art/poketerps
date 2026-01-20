@@ -48,13 +48,19 @@ const isAdmin = (chatId) => ADMIN_IDS.has(chatId);
 
 const allowedTypes = new Set(["hash", "weed", "extraction", "wpff"]);
 const micronValues = ["120u", "90u", "73u", "45u"];
+const weedKindValues = ["indica", "sativa", "hybrid"];
+
 const isMicron = (v) => micronValues.includes(String(v || "").toLowerCase());
+const isWeedKind = (v) => weedKindValues.includes(String(v || "").toLowerCase());
 
 const csvToArr = (str) =>
   (str || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+
+const typeLabel = (t) => ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF" }[t] || t);
+const weedKindLabel = (k) => ({ indica: "Indica", sativa: "Sativa", hybrid: "Hybrid" }[k] || k);
 
 /* ================== DB HELPERS (Supabase) ================== */
 async function dbListCards() {
@@ -92,7 +98,6 @@ async function dbDeleteCard(id) {
 }
 
 /* ================== API POUR LA MINI-APP ================== */
-// ta mini-app lit ça pour afficher les fiches
 app.get("/api/cards", async (req, res) => {
   try {
     const cards = await dbListCards();
@@ -113,7 +118,7 @@ app.get("/api/cards", async (req, res) => {
 /* ================= MENU /START ================= */
 function sendStartMenu(chatId) {
   bot
-    .sendPhoto(chatId, "https://picsum.photos/900/500", {
+    .sendPhoto(chatId, "https://postimg.cc/hXVJ042F", {
       caption: "🧬 *Bienvenue dans PokéTerps*",
       parse_mode: "Markdown",
     })
@@ -155,12 +160,13 @@ bot.on("callback_query", async (query) => {
   } catch {}
 
   if (query.data === "info") {
-    return bot.sendPhoto(chatId, "https://picsum.photos/900/501", {
+    return bot.sendPhoto(chatId, "https://postimg.cc/3yKwCXyp", {
       caption:
         "ℹ️ *Informations PokéTerps*\n\n" +
-        "🌿 Projet éducatif sur le THC & les terpènes\n" +
-        "🧬 Fiches: hash / weed / extraction / wpff\n" +
-        "🧪 Microns: 120u / 90u / 73u / 45u\n\n" +
+        "🌿 Projet éducatif sur le THC & les terpènes\n\n" +
+        "📌 Catégories:\n" +
+        "• Hash / Extraction / WPFF → microns (120u/90u/73u/45u)\n" +
+        "• Weed → indica / sativa / hybrid\n\n" +
         "_Aucune vente – information uniquement_",
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "back" }]] },
@@ -182,13 +188,13 @@ bot.onText(/^\/adminhelp$/, (msg) => {
     chatId,
     "👑 *Commandes Admin PokéTerps*\n\n" +
       "✅ /dbtest *(test Supabase)*\n" +
-      "✅ /list [hash|weed|extraction|wpff|120u|90u|73u|45u]\n" +
-      "✅ /addform *(ajout guidé + microns)*\n" +
+      "✅ /list [hash|weed|extraction|wpff|120u|90u|73u|45u|indica|sativa|hybrid]\n" +
+      "✅ /addform *(ajout guidé : weed_kind ou microns selon type)*\n" +
       "✅ /editform *(modification guidée)*\n" +
       "✅ /delform *(suppression guidée)*\n" +
       "✅ /edit id field value\n" +
       "✅ /del id\n\n" +
-      "*fields /edit:* name,type,micron,thc,description,img,advice,terpenes,aroma,effects",
+      "*fields /edit:* name,type,micron,weed_kind,thc,description,img,advice,terpenes,aroma,effects",
     { parse_mode: "Markdown" }
   );
 });
@@ -216,15 +222,33 @@ bot.onText(/^\/list(?:\s+(\w+))?$/, async (msg, match) => {
     let cards = await dbListCards();
 
     if (filter) {
-      if (isMicron(filter)) cards = cards.filter((c) => String(c.micron || "").toLowerCase() === filter);
-      else cards = cards.filter((c) => String(c.type || "").toLowerCase() === filter);
+      if (allowedTypes.has(filter)) {
+        cards = cards.filter((c) => String(c.type || "").toLowerCase() === filter);
+      } else if (isMicron(filter)) {
+        cards = cards.filter((c) => String(c.micron || "").toLowerCase() === filter);
+      } else if (isWeedKind(filter)) {
+        cards = cards.filter((c) => String(c.weed_kind || "").toLowerCase() === filter);
+      } else {
+        return bot.sendMessage(chatId, "❌ Filtre inconnu. Exemple: /list weed, /list 90u, /list indica");
+      }
     }
 
     if (!cards.length) return bot.sendMessage(chatId, "Aucune fiche.");
 
     const lines = cards
       .slice(0, 80)
-      .map((c) => `#${c.id} • ${c.type}${c.micron ? " • " + c.micron : ""} • ${c.name}`)
+      .map((c) => {
+        const t = String(c.type || "");
+        const extra =
+          t === "weed"
+            ? c.weed_kind
+              ? ` • ${c.weed_kind}`
+              : ""
+            : c.micron
+              ? ` • ${c.micron}`
+              : "";
+        return `#${c.id} • ${t}${extra} • ${c.name}`;
+      })
       .join("\n");
 
     bot.sendMessage(chatId, `📚 Fiches (${cards.length})\n\n${lines}`);
@@ -262,6 +286,7 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
       "name",
       "type",
       "micron",
+      "weed_kind",
       "thc",
       "description",
       "img",
@@ -276,13 +301,38 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
     if (!card) return bot.sendMessage(chatId, "❌ ID introuvable.");
 
     const patch = {};
+
     if (field === "type") {
-      if (!allowedTypes.has(value)) return bot.sendMessage(chatId, "❌ type invalide: hash|weed|extraction|wpff");
-      patch.type = value;
+      const newType = value.toLowerCase();
+      if (!allowedTypes.has(newType)) return bot.sendMessage(chatId, "❌ type invalide: hash|weed|extraction|wpff");
+      patch.type = newType;
+
+      // règles : weed => weed_kind obligatoire + pas de micron
+      if (newType === "weed") {
+        patch.micron = null;
+        patch.weed_kind = card.weed_kind || "hybrid";
+      } else {
+        patch.weed_kind = null;
+      }
     } else if (field === "micron") {
-      const v = value === "-" ? null : value;
+      const v = value === "-" ? null : value.toLowerCase();
       if (v && !isMicron(v)) return bot.sendMessage(chatId, "❌ micron invalide: 120u|90u|73u|45u (ou `-`)");
+
+      // pas de micron pour weed
+      if (String(card.type).toLowerCase() === "weed") {
+        return bot.sendMessage(chatId, "❌ Weed n’a pas de micron. Modifie weed_kind.");
+      }
+
       patch.micron = v;
+    } else if (field === "weed_kind") {
+      const v = value === "-" ? null : value.toLowerCase();
+      if (v && !isWeedKind(v)) return bot.sendMessage(chatId, "❌ weed_kind invalide: indica|sativa|hybrid (ou `-`)");
+
+      if (String(card.type).toLowerCase() !== "weed") {
+        return bot.sendMessage(chatId, "❌ weed_kind existe seulement pour le type weed.");
+      }
+
+      patch.weed_kind = v || "hybrid";
     } else if (["terpenes", "aroma", "effects"].includes(field)) {
       patch[field] = csvToArr(value);
     } else {
@@ -341,15 +391,30 @@ function askMicron(chatId) {
   });
 }
 
+function askWeedKind(chatId) {
+  bot.sendMessage(chatId, "3/10 — Choisis *indica / sativa / hybrid* :", {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Indica", callback_data: "add_weedkind_indica" }, { text: "Sativa", callback_data: "add_weedkind_sativa" }],
+        [{ text: "Hybrid", callback_data: "add_weedkind_hybrid" }],
+        [{ text: "❌ Annuler", callback_data: "add_cancel" }],
+      ],
+    },
+  });
+}
+
 async function addFinish(chatId) {
   const state = addWizard.get(chatId);
   if (!state) return;
   const d = state.data;
 
-  const card = await dbInsertCard({
+  // sécurité logique
+  const t = String(d.type || "").toLowerCase();
+
+  const payload = {
     name: d.name,
-    type: d.type,
-    micron: d.micron || null,
+    type: t,
     thc: d.thc || "—",
     description: d.description || "—",
     img: d.img || "",
@@ -357,15 +422,35 @@ async function addFinish(chatId) {
     aroma: csvToArr(d.aroma || ""),
     effects: csvToArr(d.effects || ""),
     advice: d.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
-  });
+    micron: null,
+    weed_kind: null,
+  };
 
+  if (t === "weed") {
+    payload.weed_kind = d.weed_kind || "hybrid";
+    payload.micron = null;
+  } else {
+    payload.micron = d.micron || null;
+    payload.weed_kind = null;
+  }
+
+  const card = await dbInsertCard(payload);
   addWizard.delete(chatId);
+
+  const extra =
+    card.type === "weed"
+      ? card.weed_kind
+        ? ` • ${weedKindLabel(card.weed_kind)}`
+        : ""
+      : card.micron
+        ? ` • ${card.micron}`
+        : "";
 
   bot.sendMessage(
     chatId,
     "✅ *Fiche ajoutée !*\n\n" +
       `#${card.id} — *${card.name}*\n` +
-      `Catégorie: *${card.type}${card.micron ? " • " + card.micron : ""}*\n` +
+      `Catégorie: *${typeLabel(card.type)}${extra}*\n` +
       `${card.thc}\n\n` +
       `🧬 ${card.description}\n` +
       `🌿 Terpènes: ${card.terpenes?.length ? card.terpenes.join(", ") : "—"}\n` +
@@ -443,17 +528,46 @@ bot.on("callback_query", async (query) => {
     if (!allowedTypes.has(t)) return;
 
     state.data.type = t;
-    state.step = "micron";
+
+    // weed => weed_kind, sinon micron
+    if (t === "weed") {
+      state.step = "weed_kind";
+      addWizard.set(chatId, state);
+      return askWeedKind(chatId);
+    } else {
+      state.step = "micron";
+      addWizard.set(chatId, state);
+      return askMicron(chatId);
+    }
+  }
+
+  // ADD weed_kind
+  if (isAdmin(chatId) && query.data?.startsWith("add_weedkind_")) {
+    const state = addWizard.get(chatId);
+    if (!state) return;
+
+    const k = query.data.replace("add_weedkind_", "");
+    if (!isWeedKind(k)) return;
+
+    state.data.weed_kind = k;
+    state.data.micron = ""; // sécurité
+    state.step = "thc";
     addWizard.set(chatId, state);
-    return askMicron(chatId);
+
+    return bot.sendMessage(chatId, "4/10 — Envoie le *THC* (ex: `THC: 20–26%`).", {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
+    });
   }
 
   // ADD micron
   if (isAdmin(chatId) && query.data?.startsWith("add_micron_")) {
     const state = addWizard.get(chatId);
     if (!state) return;
+
     const m = query.data.replace("add_micron_", "");
     state.data.micron = m === "none" ? "" : m;
+    state.data.weed_kind = null; // sécurité
     state.step = "thc";
     addWizard.set(chatId, state);
 
@@ -478,9 +592,18 @@ bot.on("callback_query", async (query) => {
 
       delWizard.set(chatId, { id });
 
+      const extra =
+        card.type === "weed"
+          ? card.weed_kind
+            ? ` • ${card.weed_kind}`
+            : ""
+          : card.micron
+            ? ` • ${card.micron}`
+            : "";
+
       return bot.sendMessage(
         chatId,
-        `⚠️ Confirme la suppression :\n\n#${card.id} — ${card.name}\n(${card.type}${card.micron ? " • " + card.micron : ""})`,
+        `⚠️ Confirme la suppression :\n\n#${card.id} — ${card.name}\n(${card.type}${extra})`,
         {
           reply_markup: {
             inline_keyboard: [
@@ -517,11 +640,18 @@ bot.on("callback_query", async (query) => {
       const card = await dbGetCard(id);
       if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
 
+      const isWeed = String(card.type).toLowerCase() === "weed";
+
+      // si weed => propose weed_kind, sinon micron
+      const line2 = isWeed
+        ? [{ text: "Weed Kind", callback_data: `edit_field_${id}_weed_kind` }, { text: "THC", callback_data: `edit_field_${id}_thc` }]
+        : [{ text: "Micron", callback_data: `edit_field_${id}_micron` }, { text: "THC", callback_data: `edit_field_${id}_thc` }];
+
       return bot.sendMessage(chatId, `✅ Fiche sélectionnée: #${id}\nChoisis le champ :`, {
         reply_markup: {
           inline_keyboard: [
             [{ text: "Nom", callback_data: `edit_field_${id}_name` }, { text: "Type", callback_data: `edit_field_${id}_type` }],
-            [{ text: "Micron", callback_data: `edit_field_${id}_micron` }, { text: "THC", callback_data: `edit_field_${id}_thc` }],
+            line2,
             [{ text: "Description", callback_data: `edit_field_${id}_description` }, { text: "Image", callback_data: `edit_field_${id}_img` }],
             [{ text: "Terpènes", callback_data: `edit_field_${id}_terpenes` }, { text: "Arômes", callback_data: `edit_field_${id}_aroma` }],
             [{ text: "Effets", callback_data: `edit_field_${id}_effects` }, { text: "Conseils", callback_data: `edit_field_${id}_advice` }],
@@ -566,6 +696,18 @@ bot.on("callback_query", async (query) => {
       });
     }
 
+    if (field === "weed_kind") {
+      return bot.sendMessage(chatId, `🔁 Nouveau weed_kind pour #${id} :`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Indica", callback_data: `edit_setweedkind_${id}_indica` }, { text: "Sativa", callback_data: `edit_setweedkind_${id}_sativa` }],
+            [{ text: "Hybrid", callback_data: `edit_setweedkind_${id}_hybrid` }],
+            [{ text: "❌ Annuler", callback_data: "edit_cancel" }],
+          ],
+        },
+      });
+    }
+
     editWizard.set(chatId, { id, field, step: "value" });
 
     return bot.sendMessage(
@@ -584,7 +726,19 @@ bot.on("callback_query", async (query) => {
       const newType = parts[3];
       if (!allowedTypes.has(newType)) return bot.sendMessage(chatId, "❌ Type invalide.");
 
-      await dbUpdateCard(id, { type: newType });
+      const card = await dbGetCard(id);
+      if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
+
+      const patch = { type: newType };
+
+      if (newType === "weed") {
+        patch.micron = null;
+        patch.weed_kind = card.weed_kind || "hybrid";
+      } else {
+        patch.weed_kind = null;
+      }
+
+      await dbUpdateCard(id, patch);
       return bot.sendMessage(chatId, `✅ Type mis à jour: #${id} → ${newType}`);
     } catch (e) {
       return bot.sendMessage(chatId, `❌ settype: ${e.message}`);
@@ -600,10 +754,33 @@ bot.on("callback_query", async (query) => {
       const m = micron === "none" ? null : micron;
       if (m && !isMicron(m)) return bot.sendMessage(chatId, "❌ Micron invalide.");
 
+      const card = await dbGetCard(id);
+      if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
+      if (String(card.type).toLowerCase() === "weed") return bot.sendMessage(chatId, "❌ Weed n’a pas de micron.");
+
       await dbUpdateCard(id, { micron: m });
       return bot.sendMessage(chatId, `✅ Micron mis à jour: #${id} → ${m || "Aucun"}`);
     } catch (e) {
       return bot.sendMessage(chatId, `❌ setmicron: ${e.message}`);
+    }
+  }
+
+  // EDIT set weed_kind
+  if (isAdmin(chatId) && query.data?.startsWith("edit_setweedkind_")) {
+    try {
+      const parts = query.data.split("_");
+      const id = Number(parts[2]);
+      const k = parts[3];
+      if (!isWeedKind(k)) return bot.sendMessage(chatId, "❌ weed_kind invalide.");
+
+      const card = await dbGetCard(id);
+      if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
+      if (String(card.type).toLowerCase() !== "weed") return bot.sendMessage(chatId, "❌ weed_kind uniquement pour weed.");
+
+      await dbUpdateCard(id, { weed_kind: k, micron: null });
+      return bot.sendMessage(chatId, `✅ Weed_kind mis à jour: #${id} → ${weedKindLabel(k)}`);
+    } catch (e) {
+      return bot.sendMessage(chatId, `❌ setweedkind: ${e.message}`);
     }
   }
 });
@@ -624,42 +801,49 @@ bot.on("message", async (msg) => {
       addWizard.set(chatId, addState);
       return askType(chatId);
     }
+
     if (addState.step === "thc") {
       addState.data.thc = text;
       addState.step = "description";
       addWizard.set(chatId, addState);
       return bot.sendMessage(chatId, "5/10 — Envoie la *description*.", { parse_mode: "Markdown" });
     }
+
     if (addState.step === "description") {
       addState.data.description = text;
       addState.step = "terpenes";
       addWizard.set(chatId, addState);
       return bot.sendMessage(chatId, "6/10 — Terpènes (virgules) ou `-`", { parse_mode: "Markdown" });
     }
+
     if (addState.step === "terpenes") {
       addState.data.terpenes = text === "-" ? "" : text;
       addState.step = "aroma";
       addWizard.set(chatId, addState);
       return bot.sendMessage(chatId, "7/10 — Arômes (virgules) ou `-`", { parse_mode: "Markdown" });
     }
+
     if (addState.step === "aroma") {
       addState.data.aroma = text === "-" ? "" : text;
       addState.step = "effects";
       addWizard.set(chatId, addState);
       return bot.sendMessage(chatId, "8/10 — Effets (virgules) ou `-`", { parse_mode: "Markdown" });
     }
+
     if (addState.step === "effects") {
       addState.data.effects = text === "-" ? "" : text;
       addState.step = "advice";
       addWizard.set(chatId, addState);
       return bot.sendMessage(chatId, "9/10 — Conseils / warning", { parse_mode: "Markdown" });
     }
+
     if (addState.step === "advice") {
       addState.data.advice = text;
       addState.step = "img";
       addWizard.set(chatId, addState);
       return bot.sendMessage(chatId, "10/10 — Image URL (ou `-`)", { parse_mode: "Markdown" });
     }
+
     if (addState.step === "img") {
       addState.data.img = text === "-" ? "" : text;
       try {
@@ -678,15 +862,33 @@ bot.on("message", async (msg) => {
       const { id, field } = ed;
       const val = text === "-" ? "" : text;
 
+      const card = await dbGetCard(id);
+      if (!card) throw new Error("Fiche introuvable.");
+
       const patch = {};
+
       if (["terpenes", "aroma", "effects"].includes(field)) {
         patch[field] = val ? csvToArr(val) : [];
       } else if (field === "micron") {
+        if (String(card.type).toLowerCase() === "weed") throw new Error("Weed n’a pas de micron.");
         if (val && !isMicron(val)) throw new Error("micron invalide");
-        patch.micron = val ? val : null;
+        patch.micron = val ? val.toLowerCase() : null;
+      } else if (field === "weed_kind") {
+        if (String(card.type).toLowerCase() !== "weed") throw new Error("weed_kind uniquement pour weed.");
+        if (val && !isWeedKind(val)) throw new Error("weed_kind invalide");
+        patch.weed_kind = val ? val.toLowerCase() : "hybrid";
+        patch.micron = null;
       } else if (field === "type") {
-        if (val && !allowedTypes.has(val)) throw new Error("type invalide");
-        patch.type = val;
+        const v = val.toLowerCase();
+        if (v && !allowedTypes.has(v)) throw new Error("type invalide");
+        patch.type = v;
+
+        if (v === "weed") {
+          patch.micron = null;
+          patch.weed_kind = card.weed_kind || "hybrid";
+        } else {
+          patch.weed_kind = null;
+        }
       } else {
         patch[field] = val;
       }
