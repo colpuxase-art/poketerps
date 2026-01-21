@@ -138,6 +138,79 @@ async function dbUnsetFeatured() {
   if (error) throw error;
 }
 
+/* ================== SETTINGS (tracking pause/resume) ================== */
+async function dbGetSetting(key) {
+  assertSupabase();
+  const { data, error } = await sb.from("app_settings").select("*").eq("key", key).maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function dbUpsertSetting(key, value_json) {
+  assertSupabase();
+  const payload = { key, value_json, updated_at: new Date().toISOString() };
+  const { data, error } = await sb.from("app_settings").upsert(payload).select("*").single();
+  if (error) throw error;
+  return data;
+}
+
+async function isTrackingPaused() {
+  try {
+    const s = await dbGetSetting("tracking");
+    const paused = Boolean(s?.value_json?.paused);
+    return paused;
+  } catch {
+    // si settings KO -> on ne bloque pas
+    return false;
+  }
+}
+
+/* ================== TRACKING API ================== */
+/**
+ * Body attendu:
+ * {
+ *   session_id: "abc",
+ *   event: "open_app" | "view_card" | ...
+ *   card_id?: number,
+ *   meta?: object
+ * }
+ */
+app.post("/api/track", async (req, res) => {
+  try {
+    assertSupabase();
+
+    // pause/resume global
+    if (await isTrackingPaused()) return res.status(204).end();
+
+    const { session_id, event, card_id, meta } = req.body || {};
+
+    const sid = String(session_id || "").trim();
+    const ev = String(event || "").trim();
+
+    if (!sid || sid.length > 120) return res.status(400).json({ error: "bad_session" });
+    if (!ev || ev.length > 60) return res.status(400).json({ error: "bad_event" });
+
+    // on limite meta à un objet JSON
+    const m = meta && typeof meta === "object" ? meta : {};
+
+    const payload = {
+      session_id: sid,
+      event: ev,
+      card_id: card_id == null ? null : Number(card_id),
+      meta: m,
+    };
+
+    const { error } = await sb.from("track_events").insert(payload);
+    if (error) throw error;
+
+    res.status(204).end();
+  } catch (e) {
+    console.error("❌ /api/track:", e.message);
+    // on renvoie 204 pour ne jamais casser le front
+    res.status(204).end();
+  }
+});
+
 /* ================== API POUR LA MINI-APP ================== */
 app.get("/api/cards", async (req, res) => {
   try {
@@ -234,7 +307,218 @@ bot.on("callback_query", async (query) => {
   if (query.data === "reviews") return bot.sendMessage(chatId, "⭐ Reviews en préparation...");
 });
 
-/* ================== COMMANDES ADMIN ================== */
+/* ================== STATS HELPERS ================== */
+function isoDayRange(dateStr) {
+  // dateStr: "YYYY-MM-DD"
+  const d0 = new Date(`${dateStr}T00:00:00.000Z`);
+  const d1 = new Date(`${dateStr}T00:00:00.000Z`);
+  d1.setUTCDate(d1.getUTCDate() + 1);
+  return { start: d0.toISOString(), end: d1.toISOString() };
+}
+
+function todayUTC() {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(now.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function yesterdayUTC() {
+  const now = new Date();
+  now.setUTCDate(now.getUTCDate() - 1);
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(now.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+async function fetchEventsInRange(startIso, endIso) {
+  assertSupabase();
+  // si tu as énormément de data, on mettra pagination. Là c’est OK pour démarrer.
+  const { data, error } = await sb
+    .from("track_events")
+    .select("event,session_id,card_id,ts")
+    .gte("ts", startIso)
+    .lt("ts", endIso)
+    .limit(10000);
+
+  if (error) throw error;
+  return data || [];
+}
+
+function buildStats(events) {
+  const byEvent = new Map();
+  const sessionsAll = new Set();
+  const sessionsOpen = new Set();
+  const cardViews = new Map();
+
+  for (const e of events) {
+    sessionsAll.add(String(e.session_id));
+
+    // total par event
+    const k = String(e.event);
+    byEvent.set(k, (byEvent.get(k) || 0) + 1);
+
+    // "personnes" = sessions uniques qui ont réellement ouvert l'app
+    if (k === "open_app") sessionsOpen.add(String(e.session_id));
+
+    // top cards
+    if (k === "view_card" && e.card_id != null) {
+      const cid = String(e.card_id);
+      cardViews.set(cid, (cardViews.get(cid) || 0) + 1);
+    }
+    if (k === "view_featured" && e.card_id != null) {
+      const cid = String(e.card_id);
+      cardViews.set(cid, (cardViews.get(cid) || 0) + 1);
+    }
+  }
+
+  const byEventSorted = [...byEvent.entries()].sort((a, b) => b[1] - a[1]);
+
+  const topCards = [...cardViews.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8);
+
+  return {
+    unique_sessions_any: sessionsAll.size,
+    unique_sessions_open_app: sessionsOpen.size,
+    byEventSorted,
+    topCards,
+  };
+}
+
+async function formatStatsMessage(label, startIso, endIso) {
+  const rows = await fetchEventsInRange(startIso, endIso);
+  const s = buildStats(rows);
+
+  const lines = [];
+  lines.push(`📊 *Stats PokéTerps* — *${label}*`);
+  lines.push("");
+  lines.push(`👥 Sessions uniques (open_app): *${s.unique_sessions_open_app}*`);
+  lines.push(`🧾 Sessions uniques (tous events): *${s.unique_sessions_any}*`);
+  lines.push(`🧠 Total events: *${rows.length}*`);
+  lines.push("");
+
+  lines.push("🖱️ *Clics / actions (top)*");
+  if (!s.byEventSorted.length) {
+    lines.push("—");
+  } else {
+    for (const [ev, n] of s.byEventSorted.slice(0, 12)) {
+      lines.push(`• \`${ev}\` : *${n}*`);
+    }
+  }
+
+  lines.push("");
+  lines.push("🔥 *Top fiches vues*");
+  if (!s.topCards.length) {
+    lines.push("—");
+  } else {
+    // on enrichit avec noms si possible (petit fetch batch)
+    const ids = s.topCards.map(([cid]) => Number(cid)).filter((x) => Number.isFinite(x));
+    let names = new Map();
+    try {
+      const { data } = await sb.from("cards").select("id,name").in("id", ids);
+      (data || []).forEach((c) => names.set(String(c.id), c.name));
+    } catch {}
+
+    for (const [cid, n] of s.topCards) {
+      const nm = names.get(cid);
+      lines.push(`• #${cid}${nm ? ` — ${nm}` : ""} : *${n}*`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/* ================== COMMANDES STATS + TRACKING ================== */
+bot.onText(/^\/trackstatus$/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    const s = await dbGetSetting("tracking");
+    const paused = Boolean(s?.value_json?.paused);
+    return bot.sendMessage(chatId, paused ? "⏸️ Tracking: *PAUSE*" : "▶️ Tracking: *ACTIF*", { parse_mode: "Markdown" });
+  } catch (e) {
+    return bot.sendMessage(chatId, `❌ /trackstatus: ${e.message}`);
+  }
+});
+
+bot.onText(/^\/trackpause$/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    await dbUpsertSetting("tracking", { paused: true });
+    return bot.sendMessage(chatId, "⏸️ Tracking mis en *pause*.", { parse_mode: "Markdown" });
+  } catch (e) {
+    return bot.sendMessage(chatId, `❌ /trackpause: ${e.message}`);
+  }
+});
+
+bot.onText(/^\/trackresume$/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    await dbUpsertSetting("tracking", { paused: false });
+    return bot.sendMessage(chatId, "▶️ Tracking *réactivé*.", { parse_mode: "Markdown" });
+  } catch (e) {
+    return bot.sendMessage(chatId, `❌ /trackresume: ${e.message}`);
+  }
+});
+
+bot.onText(/^\/stats$/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    const d = todayUTC();
+    const { start, end } = isoDayRange(d);
+    const text = await formatStatsMessage(d, start, end);
+    return bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+  } catch (e) {
+    return bot.sendMessage(chatId, `❌ /stats: ${e.message}`);
+  }
+});
+
+bot.onText(/^\/statsyesterday$/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    const d = yesterdayUTC();
+    const { start, end } = isoDayRange(d);
+    const text = await formatStatsMessage(d, start, end);
+    return bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+  } catch (e) {
+    return bot.sendMessage(chatId, `❌ /statsyesterday: ${e.message}`);
+  }
+});
+
+// /statsrange 2026-01-01 2026-01-07  (end inclusif côté humain)
+bot.onText(/^\/statsrange\s+(\d{4}-\d{2}-\d{2})\s+(\d{4}-\d{2}-\d{2})$/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    const d1 = match[1];
+    const d2 = match[2];
+
+    const start = new Date(`${d1}T00:00:00.000Z`);
+    const end = new Date(`${d2}T00:00:00.000Z`);
+    end.setUTCDate(end.getUTCDate() + 1); // inclusif
+
+    const label = `${d1} → ${d2}`;
+    const text = await formatStatsMessage(label, start.toISOString(), end.toISOString());
+    return bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+  } catch (e) {
+    return bot.sendMessage(chatId, `❌ /statsrange: ${e.message}`);
+  }
+});
+
+/* ================== COMMANDES ADMIN (tes commandes existantes) ================== */
 bot.onText(/^\/myid$/, (msg) => bot.sendMessage(msg.chat.id, `Ton chat_id = ${msg.chat.id}`));
 
 bot.onText(/^\/adminhelp$/, (msg) => {
@@ -255,6 +539,13 @@ bot.onText(/^\/adminhelp$/, (msg) => {
       "✅ /rare id (titre optionnel)\n" +
       "✅ /unrare\n" +
       "✅ /rareinfo\n\n" +
+      "📊 *Stats / Tracking*\n" +
+      "✅ /stats\n" +
+      "✅ /statsyesterday\n" +
+      "✅ /statsrange YYYY-MM-DD YYYY-MM-DD\n" +
+      "✅ /trackstatus\n" +
+      "✅ /trackpause\n" +
+      "✅ /trackresume\n\n" +
       "*fields /edit:* name,type,micron,weed_kind,thc,description,img,advice,terpenes,aroma,effects",
     { parse_mode: "Markdown" }
   );
@@ -440,7 +731,6 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
       if (!allowedTypes.has(newType)) return bot.sendMessage(chatId, "❌ type invalide: hash|weed|extraction|wpff");
       patch.type = newType;
 
-      // règles : weed => weed_kind obligatoire + pas de micron
       if (newType === "weed") {
         patch.micron = null;
         patch.weed_kind = card.weed_kind || "hybrid";
@@ -450,21 +740,16 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
     } else if (field === "micron") {
       const v = value === "-" ? null : value.toLowerCase();
       if (v && !isMicron(v)) return bot.sendMessage(chatId, "❌ micron invalide: 120u|90u|73u|45u (ou `-`)");
-
-      // pas de micron pour weed
       if (String(card.type).toLowerCase() === "weed") {
         return bot.sendMessage(chatId, "❌ Weed n’a pas de micron. Modifie weed_kind.");
       }
-
       patch.micron = v;
     } else if (field === "weed_kind") {
       const v = value === "-" ? null : value.toLowerCase();
       if (v && !isWeedKind(v)) return bot.sendMessage(chatId, "❌ weed_kind invalide: indica|sativa|hybrid (ou `-`)");
-
       if (String(card.type).toLowerCase() !== "weed") {
         return bot.sendMessage(chatId, "❌ weed_kind existe seulement pour le type weed.");
       }
-
       patch.weed_kind = v || "hybrid";
     } else if (["terpenes", "aroma", "effects"].includes(field)) {
       patch[field] = csvToArr(value);
@@ -542,7 +827,6 @@ async function addFinish(chatId) {
   if (!state) return;
   const d = state.data;
 
-  // sécurité logique
   const t = String(d.type || "").toLowerCase();
 
   const payload = {
@@ -662,7 +946,6 @@ bot.on("callback_query", async (query) => {
 
     state.data.type = t;
 
-    // weed => weed_kind, sinon micron
     if (t === "weed") {
       state.step = "weed_kind";
       addWizard.set(chatId, state);
@@ -683,7 +966,7 @@ bot.on("callback_query", async (query) => {
     if (!isWeedKind(k)) return;
 
     state.data.weed_kind = k;
-    state.data.micron = ""; // sécurité
+    state.data.micron = "";
     state.step = "thc";
     addWizard.set(chatId, state);
 
@@ -700,7 +983,7 @@ bot.on("callback_query", async (query) => {
 
     const m = query.data.replace("add_micron_", "");
     state.data.micron = m === "none" ? "" : m;
-    state.data.weed_kind = null; // sécurité
+    state.data.weed_kind = null;
     state.step = "thc";
     addWizard.set(chatId, state);
 
@@ -774,8 +1057,6 @@ bot.on("callback_query", async (query) => {
       if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
 
       const isWeed = String(card.type).toLowerCase() === "weed";
-
-      // si weed => propose weed_kind, sinon micron
       const line2 = isWeed
         ? [{ text: "Weed Kind", callback_data: `edit_field_${id}_weed_kind` }, { text: "THC", callback_data: `edit_field_${id}_thc` }]
         : [{ text: "Micron", callback_data: `edit_field_${id}_micron` }, { text: "THC", callback_data: `edit_field_${id}_thc` }];
@@ -803,7 +1084,6 @@ bot.on("callback_query", async (query) => {
     const id = Number(parts[2]);
     const field = parts.slice(3).join("_");
 
-    // menus spéciaux
     if (field === "type") {
       return bot.sendMessage(chatId, `🔁 Nouveau type pour #${id} :`, {
         reply_markup: {
