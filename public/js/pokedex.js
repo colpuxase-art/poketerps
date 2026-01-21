@@ -26,6 +26,8 @@
 
   /* ================= HELPERS ================= */
   const $ = (id) => document.getElementById(id);
+  const safeStr = (v) => (v == null ? "" : String(v));
+  const norm = (v) => safeStr(v).trim().toLowerCase();
 
   const typeLabel = (t) =>
     ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF" }[t] || t);
@@ -35,21 +37,48 @@
 
   const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
 
-  const safeStr = (v) => (v == null ? "" : String(v));
-  const norm = (v) => safeStr(v).trim().toLowerCase();
-
   function cardDesc(c) {
     return c.desc ?? c.description ?? c.profile ?? "—";
+  }
+
+  function toast(msg) {
+    const t = $("toast");
+    if (!t) return;
+    t.textContent = msg;
+    t.style.display = "block";
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => (t.style.display = "none"), 1400);
+  }
+
+  function haptic(kind = "impact", style = "light") {
+    try {
+      tg?.HapticFeedback?.impactOccurred?.(style);
+    } catch {}
+  }
+
+  function parseThcScore(thcText) {
+    // essaie d’extraire un nombre "max" depuis "THC: 70–90%" ou "70-90"
+    const s = safeStr(thcText);
+    const nums = (s.match(/\d+(\.\d+)?/g) || []).map(Number).filter((n) => !Number.isNaN(n));
+    if (!nums.length) return 0;
+    return Math.max(...nums);
   }
 
   /* ================= ELEMENTS ================= */
   const listEl = $("list");
   const countBadge = $("countBadge");
+  const favBadge = $("favBadge");
+
   const searchInput = $("searchInput");
   const clearBtn = $("clearBtn");
   const closeBtn = $("closeBtn");
   const randomBtn = $("randomBtn");
   const shareBtn = $("shareBtn");
+
+  const themeBtn = $("themeBtn");
+  const sortSelect = $("sortSelect");
+  const favToggle = $("favToggle");
+  const favBtn = $("favBtn");
 
   const subChips = $("subChips");
 
@@ -61,12 +90,12 @@
   const pokeThc = $("pokeThc");
   const pokeDesc = $("pokeDesc");
 
-  // ✅ skeletons
+  // skeletons
   const listSkeleton = $("listSkeleton");
   const detailsSkeleton = $("detailsSkeleton");
   const detailsReal = $("detailsReal");
 
-  // ✅ FEATURED UI
+  // featured
   const featuredBox = $("featuredBox");
   const featuredImg = $("featuredImg");
   const featuredTitle = $("featuredTitle");
@@ -78,7 +107,7 @@
   const sparklesWrap = $("sparkles");
 
   if (!listEl || !countBadge || !searchInput) {
-    console.error("❌ IDs HTML manquants (list, countBadge, searchInput)");
+    console.error("❌ IDs HTML manquants");
     return;
   }
 
@@ -89,8 +118,48 @@
   let pokedex = [];
   let featured = null;
 
+  let sortMode = "new";     // new | az | thc
+  let showFavOnly = false;
+
   const micronValues = ["120u", "90u", "73u", "45u"];
   const weedKindValues = ["indica", "sativa", "hybrid"];
+
+  /* ================= PERSIST ================= */
+  const LS = {
+    fav: "pk_favs_v1",
+    theme: "pk_theme_v1",
+  };
+
+  function loadFavs() {
+    try {
+      const raw = localStorage.getItem(LS.fav);
+      const arr = JSON.parse(raw || "[]");
+      return new Set((Array.isArray(arr) ? arr : []).map(String));
+    } catch {
+      return new Set();
+    }
+  }
+  function saveFavs(set) {
+    try {
+      localStorage.setItem(LS.fav, JSON.stringify([...set]));
+    } catch {}
+  }
+
+  let favs = loadFavs();
+
+  function applyThemeFromStorage() {
+    const v = localStorage.getItem(LS.theme) || "normal";
+    document.body.classList.toggle("shiny-mode", v === "shiny");
+    if (themeBtn) themeBtn.textContent = v === "shiny" ? "✨ Shiny ON" : "✨ Shiny";
+  }
+
+  function toggleTheme() {
+    const isShiny = document.body.classList.toggle("shiny-mode");
+    localStorage.setItem(LS.theme, isShiny ? "shiny" : "normal");
+    if (themeBtn) themeBtn.textContent = isShiny ? "✨ Shiny ON" : "✨ Shiny";
+    toast(isShiny ? "✨ Mode Shiny activé" : "✨ Mode Shiny désactivé");
+    haptic("impact", "medium");
+  }
 
   /* ================= SKELETON ================= */
   function setLoading(isLoading) {
@@ -125,7 +194,7 @@
 
       pokedex = mapped.length ? mapped : fallbackPokedex;
     } catch (e) {
-      console.error("❌ Impossible de charger /api/cards :", e);
+      console.error("❌ /api/cards KO :", e);
       pokedex = fallbackPokedex;
     }
   }
@@ -162,7 +231,7 @@
       };
 
       renderFeatured();
-    } catch (e) {
+    } catch {
       featured = null;
       if (featuredBox) featuredBox.style.display = "none";
     }
@@ -180,14 +249,14 @@
     sparklesWrap.innerHTML = "";
 
     const spots = [
-      { top: "16%", left: "10%", d: 0.0 },
-      { top: "28%", left: "24%", d: 0.4 },
+      { top: "14%", left: "10%", d: 0.0 },
+      { top: "26%", left: "24%", d: 0.4 },
       { top: "12%", left: "52%", d: 0.2 },
-      { top: "36%", left: "62%", d: 0.6 },
-      { top: "18%", left: "84%", d: 0.1 },
-      { top: "62%", left: "14%", d: 0.5 },
-      { top: "70%", left: "46%", d: 0.3 },
-      { top: "64%", left: "78%", d: 0.7 },
+      { top: "34%", left: "66%", d: 0.6 },
+      { top: "16%", left: "86%", d: 0.1 },
+      { top: "60%", left: "14%", d: 0.5 },
+      { top: "72%", left: "46%", d: 0.3 },
+      { top: "64%", left: "80%", d: 0.7 },
     ];
 
     spots.forEach((s) => {
@@ -200,7 +269,7 @@
     });
   }
 
-  /* ================= FEATURED RENDER ================= */
+  /* ================= FEATURED ================= */
   function renderFeatured() {
     if (!featuredBox || !featured) return;
     featuredBox.style.display = "block";
@@ -208,11 +277,10 @@
     if (featuredImg) featuredImg.src = featured.img;
     if (featuredTitle) featuredTitle.textContent = featured.featured_title || "✨ Shiny du moment";
     if (featuredName) featuredName.textContent = featured.name;
-    if (featuredMeta)
-      featuredMeta.textContent = `#${featured.id} • ${typeLabel(featured.type)}${extraText(featured)}`;
+    if (featuredMeta) featuredMeta.textContent = `#${featured.id} • ${typeLabel(featured.type)}${extraText(featured)}`;
     if (featuredLine) featuredLine.textContent = `🧬 ${cardDesc(featured)}`;
 
-    // ✅ compteur rare
+    // compteur
     try {
       const total = pokedex.length || 0;
       const pos = total ? (pokedex.findIndex((x) => String(x.id) === String(featured.id)) + 1) : 0;
@@ -222,12 +290,14 @@
       }
     } catch {}
 
-    // ✅ sparkles
+    // sparkles
     makeSparkles();
 
     featuredViewBtn?.addEventListener("click", () => {
       selectCard(featured);
-      document.getElementById("pokeName")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      toast("✨ Rare affiché !");
+      haptic("impact", "medium");
+      $("pokeName")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
 
@@ -280,6 +350,7 @@
         activeSub = opt.value;
         renderSubChips();
         renderList();
+        haptic("impact", "light");
       });
       subChips.appendChild(btn);
     });
@@ -300,34 +371,55 @@
       ...(card.aroma || []),
       ...(card.effects || []),
       card.advice,
-    ]
-      .map((x) => norm(x))
-      .join(" ");
+    ].map((x) => norm(x)).join(" ");
 
     return hay.includes(q);
   }
 
   function subMatch(card) {
     if (activeType === "all" || activeSub === "all") return true;
-
     const t = norm(card.type);
     if (t === "weed") return norm(card.weed_kind) === activeSub;
     return norm(card.micron) === activeSub;
   }
 
+  function favMatch(card) {
+    if (!showFavOnly) return true;
+    return favs.has(String(card.id));
+  }
+
+  function sorted(arr) {
+    const copy = [...arr];
+    if (sortMode === "az") {
+      copy.sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+    } else if (sortMode === "thc") {
+      copy.sort((a, b) => parseThcScore(b.thc) - parseThcScore(a.thc));
+    } else {
+      // "new": plus grand id en premier (simple et efficace)
+      copy.sort((a, b) => Number(b.id) - Number(a.id));
+    }
+    return copy;
+  }
+
   function filteredList() {
     const q = norm(searchInput.value);
-
-    return pokedex.filter((p) => {
+    const base = pokedex.filter((p) => {
       const typeOk = activeType === "all" || norm(p.type) === activeType;
-      return typeOk && subMatch(p) && matchesQuery(p, q);
+      return typeOk && subMatch(p) && favMatch(p) && matchesQuery(p, q);
     });
+    return sorted(base);
   }
 
   /* ================= RENDER LIST ================= */
+  function updateBadges(itemsCount) {
+    countBadge.textContent = itemsCount;
+    if (favBadge) favBadge.textContent = `❤️ ${favs.size}`;
+    if (favToggle) favToggle.classList.toggle("active", showFavOnly);
+  }
+
   function renderList() {
     const items = filteredList();
-    countBadge.textContent = items.length;
+    updateBadges(items.length);
     listEl.innerHTML = "";
 
     if (!items.length) {
@@ -342,33 +434,46 @@
 
       const extra = extraText(p);
 
-      // ✅ shiny badge si c’est la fiche du moment
-      const shinyBadge =
-        featured && String(p.id) === String(featured.id)
-          ? `<span class="badge text-bg-warning" style="margin-left:6px;">✨ SHINY</span>`
-          : "";
+      const isShiny = featured && String(p.id) === String(featured.id);
+      const shinyBadge = isShiny
+        ? `<span class="badge text-bg-warning text-dark" style="margin-left:6px;">✨ SHINY</span>`
+        : "";
+
+      const isFav = favs.has(String(p.id));
+      const favMark = isFav
+        ? `<span class="badge text-bg-danger" style="margin-left:6px;">❤️</span>`
+        : "";
 
       btn.innerHTML = `
-        <img src="${p.img}" width="40" height="40" style="object-fit:cover;border-radius:8px;" />
+        <img src="${p.img}" width="40" height="40" style="object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.10);" />
         <div class="flex-grow-1 text-start">
-          <div class="fw-semibold">${p.name} ${shinyBadge}</div>
+          <div class="fw-semibold">${p.name} ${shinyBadge} ${favMark}</div>
           <div class="small text-secondary">#${p.id} • ${typeLabel(p.type)}${extra}</div>
         </div>
         <span class="badge text-bg-danger">Voir</span>
       `;
 
-      btn.onclick = () => selectCard(p);
+      btn.onclick = () => {
+        selectCard(p);
+        haptic("impact", "light");
+      };
       listEl.appendChild(btn);
     });
   }
 
   /* ================= SELECT ================= */
+  function refreshFavBtn() {
+    if (!favBtn || !selected) return;
+    const isFav = favs.has(String(selected.id));
+    favBtn.textContent = isFav ? "✅ Dans tes favoris" : "❤️ Ajouter aux favoris";
+    favBtn.className = isFav ? "btn btn-sm btn-warning w-100" : "btn btn-sm btn-outline-warning w-100";
+  }
+
   function selectCard(p) {
     selected = p;
 
     if (pokeName) pokeName.textContent = p.name;
     if (pokeId) pokeId.textContent = `#${p.id}`;
-
     if (pokeType) pokeType.textContent = `${typeLabel(p.type)}${extraText(p)}`;
     if (pokeThc) pokeThc.textContent = p.thc;
 
@@ -378,7 +483,6 @@
       const line3 = `👃 Arômes: ${formatList(p.aroma)}`;
       const line4 = `🧠 Effets (ressenti): ${formatList(p.effects)}`;
       const line5 = `⚠️ Conseils: ${p.advice || "—"}`;
-
       pokeDesc.textContent = [line1, "", line2, line3, line4, "", line5].join("\n");
     }
 
@@ -387,6 +491,8 @@
       pokeImg.style.display = "inline-block";
     }
     if (placeholder) placeholder.style.display = "none";
+
+    refreshFavBtn();
   }
 
   /* ================= EVENTS ================= */
@@ -395,6 +501,7 @@
   clearBtn?.addEventListener("click", () => {
     searchInput.value = "";
     renderList();
+    toast("Recherche effacée");
   });
 
   document.querySelectorAll(".chip").forEach((btn) => {
@@ -406,17 +513,52 @@
       activeSub = "all";
       renderSubChips();
       renderList();
+      haptic("impact", "light");
     });
+  });
+
+  sortSelect?.addEventListener("change", () => {
+    sortMode = sortSelect.value;
+    renderList();
+    toast(sortMode === "az" ? "Tri: A–Z" : sortMode === "thc" ? "Tri: THC haut" : "Tri: Nouveau");
+  });
+
+  favToggle?.addEventListener("click", () => {
+    showFavOnly = !showFavOnly;
+    renderList();
+    toast(showFavOnly ? "Mode Favoris ❤️" : "Mode Normal");
+    haptic("impact", "medium");
+  });
+
+  favBtn?.addEventListener("click", () => {
+    if (!selected) return;
+    const id = String(selected.id);
+    if (favs.has(id)) {
+      favs.delete(id);
+      toast("Retiré des favoris");
+    } else {
+      favs.add(id);
+      toast("Ajouté aux favoris ❤️");
+    }
+    saveFavs(favs);
+    refreshFavBtn();
+    renderList();
+    haptic("impact", "medium");
   });
 
   randomBtn?.addEventListener("click", () => {
     const items = filteredList();
     if (!items.length) return;
 
-    // ✅ fun: 12% chance d’aller sur la rare
-    if (featured && Math.random() < 0.12) return selectCard(featured);
+    // fun: 15% chance d’aller sur la rare
+    if (featured && Math.random() < 0.15) {
+      selectCard(featured);
+      toast("✨ Random → Rare !");
+      return;
+    }
 
     selectCard(items[Math.floor(Math.random() * items.length)]);
+    toast("🎲 Random !");
   });
 
   shareBtn?.addEventListener("click", async () => {
@@ -437,9 +579,7 @@
       return;
     } catch {}
 
-    try {
-      await navigator.clipboard?.writeText(shareText);
-    } catch {}
+    try { await navigator.clipboard?.writeText(shareText); } catch {}
 
     tg?.showPopup({
       title: "Partager",
@@ -453,13 +593,24 @@
     else window.close();
   });
 
+  themeBtn?.addEventListener("click", toggleTheme);
+
   /* ================= INIT ================= */
   (async () => {
+    applyThemeFromStorage();
     setLoading(true);
+
     await loadCards();
     await loadFeatured();
+
     renderSubChips();
     renderList();
+
     setLoading(false);
+
+    // si featured existe, petit “wow”
+    if (featured) {
+      toast("✨ Shiny du moment chargé");
+    }
   })();
 })();
