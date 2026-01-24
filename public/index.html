@@ -1,1 +1,76 @@
-<INDEX_HTML_PLACEHOLDER>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HarvestDex</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🌾</span>
+      <span class="title">HarvestDex</span>
+    </div>
+    <div class="tabs">
+      <button id="tab-dex" class="tab active">Dex</button>
+      <button id="tab-mydex" class="tab">Mon Dex</button>
+    </div>
+  </header>
+
+  <section class="filters">
+    <select id="filter-type">
+      <option value="">Tous les types</option>
+      <option value="hash">Hash</option>
+      <option value="weed">Weed</option>
+      <option value="extraction">Extraction</option>
+      <option value="wpff">WPFF</option>
+    </select>
+
+    <select id="filter-season">
+      <option value="">Toutes saisons</option>
+    </select>
+
+    <select id="filter-rarity">
+      <option value="">Toutes raretés</option>
+      <option value="COMMON">Common</option>
+      <option value="RARE">Rare</option>
+      <option value="EPIC">Epic</option>
+      <option value="LEGENDARY">Legendary</option>
+      <option value="MYTHIC">Mythic</option>
+    </select>
+  </section>
+
+  <main id="list" class="card-list"></main>
+
+  <div id="detail" class="detail hidden">
+    <button id="close-detail">✕</button>
+
+    <img id="detail-img" />
+    <h2 id="detail-name"></h2>
+
+    <div class="badges">
+      <span id="badge-type" class="badge"></span>
+      <span id="badge-season" class="badge badge-season"></span>
+      <span id="badge-rarity" class="badge badge-rarity"></span>
+    </div>
+
+    <p id="detail-desc"></p>
+
+    <div class="meta">
+      <div><strong>THC:</strong> <span id="detail-thc"></span></div>
+      <div><strong>Terpènes:</strong> <span id="detail-terp"></span></div>
+      <div><strong>Arômes:</strong> <span id="detail-aroma"></span></div>
+      <div><strong>Effets:</strong> <span id="detail-effects"></span></div>
+    </div>
+
+    <div class="actions">
+      <button id="btn-fav">❤️ Favori</button>
+      <button id="btn-share">📤 Partager</button>
+    </div>
+  </div>
+
+  <script src="/js/pokedex.js"></script>
+</body>
+</html>
