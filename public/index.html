@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-    <title>PokéTerps — Fiches</title>
+    <title>HarvestDex — Fiches</title>
 
     <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
     <link href="css/styles.css" rel="stylesheet" />
@@ -172,18 +172,55 @@
       body.shiny-mode .navbar{
         box-shadow: 0 12px 40px rgba(0,0,0,.65);
       }
+    
+      /* ================== HARVESTDEX THEME ================== */
+      :root{
+        --hdx-green: rgba(25,135,84,1);   /* bootstrap success */
+        --hdx-gold: rgba(255,193,7,1);
+        --hdx-glass: rgba(255,255,255,.06);
+        --hdx-line: rgba(255,255,255,.10);
+        --hdx-text2: rgba(255,255,255,.72);
+      }
+      .hdx-tabbar{
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        display:flex;
+        gap:10px;
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+        background: rgba(0,0,0,.82);
+        border-top: 1px solid rgba(255,255,255,.10);
+        backdrop-filter: blur(10px);
+        z-index: 9998;
+      }
+      .hdx-tab{
+        flex:1;
+        border: 1px solid rgba(255,255,255,.14);
+        background: rgba(255,255,255,.04);
+        color: rgba(255,255,255,.92);
+        padding: 10px 12px;
+        border-radius: 14px;
+        font-weight: 800;
+        letter-spacing: .2px;
+      }
+      .hdx-tab.active{
+        border-color: rgba(25,135,84,.55);
+        box-shadow: 0 0 0 1px rgba(25,135,84,.18), 0 0 18px rgba(25,135,84,.10);
+      }
+      /* keep content above tabbar */
+      body{ padding-bottom: 74px; }
+
     </style>
   </head>
 
   <body class="bg-dark">
     <!-- NAVBAR -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-danger">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-success">
       <div class="container">
-        <a class="navbar-brand fw-bold text-danger" href="#">PokéTerps</a>
+        <a class="navbar-brand fw-bold text-success" href="#">HarvestDex</a>
 
         <div class="d-flex gap-2">
           <button id="themeBtn" class="btn btn-sm btn-outline-warning">✨ Shiny</button>
-          <button id="closeBtn" class="btn btn-sm btn-outline-danger">Fermer</button>
+          <button id="closeBtn" class="btn btn-sm btn-outline-success">Fermer</button>
         </div>
       </div>
     </nav>
@@ -191,7 +228,7 @@
     <!-- HEADER -->
     <header class="py-4 bg-black">
       <div class="container">
-        <div class="p-3 rounded-4 border border-danger pokedex-header">
+        <div class="p-3 rounded-4 border border-success pokedex-header">
           <div class="d-flex align-items-center gap-3 flex-wrap">
             <div class="pokedex-lights">
               <span class="big"></span>
@@ -215,7 +252,7 @@
         <div class="row g-4">
           <!-- LISTE -->
           <div class="col-lg-5">
-            <div class="card bg-black text-white border border-danger rounded-4 shadow-sm">
+            <div class="card bg-black text-white border border-success rounded-4 shadow-sm">
               <div class="card-body">
 
                 <!-- FEATURED -->
@@ -230,13 +267,13 @@
                         <div>
                           <div class="d-flex align-items-center gap-2 flex-wrap">
                             <div id="featuredTitle" class="badge text-bg-warning featured-badge mb-2">✨ Shiny du moment</div>
-                            <div id="featuredCount" class="badge text-bg-danger mb-2" style="display:none;">Rare #—</div>
+                            <div id="featuredCount" class="badge text-bg-success mb-2" style="display:none;">Rare #—</div>
                           </div>
                           <div id="featuredName" class="fw-bold">—</div>
                           <div id="featuredMeta" class="featured-mini">—</div>
                         </div>
                         <div class="d-flex align-items-center gap-2">
-                          <button id="featuredViewBtn" class="btn btn-sm btn-danger featured-btn">Voir</button>
+                          <button id="featuredViewBtn" class="btn btn-sm btn-success featured-btn">Voir</button>
                         </div>
                       </div>
                       <div id="featuredLine" class="mt-2 featured-mini">🧬 —</div>
@@ -248,7 +285,7 @@
                 <div class="control-pill mb-3">
                   <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
-                      <span class="badge text-bg-danger" id="countBadge">0</span>
+                      <span class="badge text-bg-success" id="countBadge">0</span>
                       <span class="badge text-bg-warning text-dark" id="favBadge">❤️ 0</span>
                     </div>
 
@@ -257,6 +294,7 @@
                         <option value="new">🆕 Nouveau</option>
                         <option value="az">A–Z</option>
                         <option value="thc">🔥 THC (haut)</option>
+                        <option value="rarity">⭐ Rareté (haut)</option>
                       </select>
                       <button id="favToggle" class="btn btn-sm pill-btn" type="button">❤️ Favoris</button>
                     </div>
@@ -276,7 +314,7 @@
 
                 <!-- FILTER CHIPS -->
                 <div class="mt-2 d-flex flex-wrap gap-2">
-                  <button class="btn btn-sm btn-outline-danger chip active" data-type="all">Tous</button>
+                  <button class="btn btn-sm btn-outline-success chip active" data-type="all">Tous</button>
                   <button class="btn btn-sm btn-outline-light chip" data-type="hash">Hash</button>
                   <button class="btn btn-sm btn-outline-success chip" data-type="weed">Weed</button>
                   <button class="btn btn-sm btn-outline-warning chip" data-type="extraction">Extraction</button>
@@ -308,7 +346,7 @@
 
           <!-- DETAILS -->
           <div class="col-lg-7">
-            <div class="card bg-black text-white border border-danger rounded-4 shadow-sm">
+            <div class="card bg-black text-white border border-success rounded-4 shadow-sm">
               <div class="card-body">
                 <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
                   <div>
@@ -317,7 +355,7 @@
                   </div>
 
                   <div class="d-flex gap-2">
-                    <button id="randomBtn" class="btn btn-danger" type="button">🎲 Random</button>
+                    <button id="randomBtn" class="btn btn-success" type="button">🎲 Random</button>
                     <button id="shareBtn" class="btn btn-outline-light" type="button">📤 Partager</button>
                   </div>
                 </div>
@@ -372,7 +410,7 @@ Ici tu verras la fiche complète (terpènes, arômes, effets, conseils).
                 </div>
 
                 <div class="mt-3 text-end">
-                  <small class="text-secondary"><h>POKETERPS 1.0</h></small>
+                  <small class="text-secondary"><h>HARVESTDEX 1.0</h></small>
                 </div>
               </div>
             </div>
@@ -381,13 +419,21 @@ Ici tu verras la fiche complète (terpènes, arômes, effets, conseils).
       </div>
     </main>
 
-    <footer class="py-4 bg-black border-top border-danger">
+    <footer class="py-4 bg-black border-top border-success">
       <div class="container text-center text-secondary">
-        PokéTerps © <span id="year"></span>
+        HarvestDex © <span id="year"></span>
       </div>
     </footer>
 
     <div id="toast">—</div>
+
+
+    <!-- TAB BAR -->
+    <div id="tabbar" class="hdx-tabbar">
+      <button id="tabDex" class="hdx-tab active" type="button">📘 Dex</button>
+      <button id="tabMyDex" class="hdx-tab" type="button">❤️ Mon Dex</button>
+    </div>
+
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/pokedex.js"></script>

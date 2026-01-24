@@ -11116,3 +11116,12 @@ footer.bg-black {
   background: rgba(0,0,0,.55) !important;
   backdrop-filter: blur(12px);
 }
+
+
+/* ================== HarvestDex additions ================== */
+.hdx-rarity{ font-weight: 900; letter-spacing: .2px; }
+.hdx-common{ background: rgba(108,117,125,1) !important; color:#fff !important; }
+.hdx-rare{ background: rgba(13,202,240,1) !important; color:#001014 !important; }
+.hdx-epic{ background: rgba(111,66,193,1) !important; color:#fff !important; }
+.hdx-legendary{ background: rgba(255,193,7,1) !important; color:#1a1200 !important; }
+.hdx-mythic{ background: rgba(255,105,180,1) !important; color:#1a0010 !important; }

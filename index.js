@@ -21,6 +21,14 @@ const TOKEN = process.env.BOT_TOKEN; // ✅ Render
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
+
+const WEBAPP_URL = process.env.WEBAPP_URL || "https://poketerps.onrender.com"; // 🔗 URL de la mini-app
+// Liens "Soutenir" (optionnels)
+const SUPPORT_FOLLOW_URL = process.env.SUPPORT_FOLLOW_URL || "https://t.me/TON_CHANNEL";
+const SUPPORT_DONATE_URL = process.env.SUPPORT_DONATE_URL || "https://t.me/TON_LIEN";
+const GAME_MOTO_URL = process.env.GAME_MOTO_URL || "https://example.com/moto";
+const GAME_DRIFT_URL = process.env.GAME_DRIFT_URL || "https://example.com/drift";
+
 // ⚠️ stop net si token manquant (sinon 401)
 if (!TOKEN) {
   console.error("❌ BOT_TOKEN manquant (Render -> Environment).");
@@ -138,79 +146,6 @@ async function dbUnsetFeatured() {
   if (error) throw error;
 }
 
-/* ================== SETTINGS (tracking pause/resume) ================== */
-async function dbGetSetting(key) {
-  assertSupabase();
-  const { data, error } = await sb.from("app_settings").select("*").eq("key", key).maybeSingle();
-  if (error) throw error;
-  return data || null;
-}
-
-async function dbUpsertSetting(key, value_json) {
-  assertSupabase();
-  const payload = { key, value_json, updated_at: new Date().toISOString() };
-  const { data, error } = await sb.from("app_settings").upsert(payload).select("*").single();
-  if (error) throw error;
-  return data;
-}
-
-async function isTrackingPaused() {
-  try {
-    const s = await dbGetSetting("tracking");
-    const paused = Boolean(s?.value_json?.paused);
-    return paused;
-  } catch {
-    // si settings KO -> on ne bloque pas
-    return false;
-  }
-}
-
-/* ================== TRACKING API ================== */
-/**
- * Body attendu:
- * {
- *   session_id: "abc",
- *   event: "open_app" | "view_card" | ...
- *   card_id?: number,
- *   meta?: object
- * }
- */
-app.post("/api/track", async (req, res) => {
-  try {
-    assertSupabase();
-
-    // pause/resume global
-    if (await isTrackingPaused()) return res.status(204).end();
-
-    const { session_id, event, card_id, meta } = req.body || {};
-
-    const sid = String(session_id || "").trim();
-    const ev = String(event || "").trim();
-
-    if (!sid || sid.length > 120) return res.status(400).json({ error: "bad_session" });
-    if (!ev || ev.length > 60) return res.status(400).json({ error: "bad_event" });
-
-    // on limite meta à un objet JSON
-    const m = meta && typeof meta === "object" ? meta : {};
-
-    const payload = {
-      session_id: sid,
-      event: ev,
-      card_id: card_id == null ? null : Number(card_id),
-      meta: m,
-    };
-
-    const { error } = await sb.from("track_events").insert(payload);
-    if (error) throw error;
-
-    res.status(204).end();
-  } catch (e) {
-    console.error("❌ /api/track:", e.message);
-    // on renvoie 204 pour ne jamais casser le front
-    res.status(204).end();
-  }
-});
-
 /* ================== API POUR LA MINI-APP ================== */
 app.get("/api/cards", async (req, res) => {
   try {
@@ -245,33 +180,98 @@ app.get("/api/featured", async (req, res) => {
   }
 });
 
+/* ================== API FAVORIS (Mon Pokédex) ================== */
+/**
+ * Toggle favori: body { user_id, card_id }
+ * Retour: { favorited: boolean }
+ */
+app.post("/api/favorite", async (req, res) => {
+  try {
+    assertSupabase();
+    const user_id = Number(req.body?.user_id);
+    const card_id = Number(req.body?.card_id);
+
+    if (!user_id || !card_id) {
+      return res.status(400).json({ error: "bad_request", message: "user_id et card_id requis" });
+    }
+
+    const { data: existing, error: e0 } = await sb
+      .from("favorites")
+      .select("id")
+      .eq("user_id", user_id)
+      .eq("card_id", card_id)
+      .maybeSingle();
+    if (e0) throw e0;
+
+    if (existing?.id) {
+      const { error: e1 } = await sb.from("favorites").delete().eq("id", existing.id);
+      if (e1) throw e1;
+      return res.json({ favorited: false });
+    }
+
+    const { error: e2 } = await sb.from("favorites").insert({ user_id, card_id });
+    if (e2) throw e2;
+
+    return res.json({ favorited: true });
+  } catch (e) {
+    console.error("❌ /api/favorite:", e.message);
+    res.status(500).json({ error: "db_error", message: e.message });
+  }
+});
+
+app.get("/api/mydex/:userId", async (req, res) => {
+  try {
+    assertSupabase();
+    const userId = Number(req.params.userId);
+    if (!userId) return res.status(400).json({ error: "bad_request", message: "userId invalide" });
+
+    const { data, error } = await sb
+      .from("favorites")
+      .select("card_id, cards(*)")
+      .eq("user_id", userId);
+
+    if (error) throw error;
+
+    const cards = (data || []).map((row) => row.cards).filter(Boolean).map((c) => ({
+      ...c,
+      desc: c.description ?? "—",
+    }));
+
+    res.json(cards);
+  } catch (e) {
+    console.error("❌ /api/mydex:", e.message);
+    res.status(500).json({ error: "db_error", message: e.message });
+  }
+});
+
+
 /* ================= MENU /START ================= */
 function sendStartMenu(chatId) {
   bot
     .sendPhoto(chatId, "https://postimg.cc/hXVJ042F", {
-      caption: "🧬 *Bienvenue dans PokéTerps*",
+      caption: "🧬 *Bienvenue dans HarvestDex*",
       parse_mode: "Markdown",
     })
     .then(() => {
       bot.sendMessage(chatId, "Choisis une section 👇", {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📘 Pokédex", web_app: { url: "https://poketerps.onrender.com" } }],
+            [{ text: "📘 Pokédex", web_app: { url: WEBAPP_URL } }],
             [{ text: "ℹ️ Informations", callback_data: "info" }],
             [{ text: "⭐ Reviews", callback_data: "reviews" }],
-            [{ text: "❤️ Soutenir", url: "https://t.me/TON_LIEN" }],
+            [{ text: "💚 Soutenir", callback_data: "support" }],
           ],
         },
       });
     })
     .catch(() => {
-      bot.sendMessage(chatId, "🧬 Bienvenue dans PokéTerps\n\nChoisis une section 👇", {
+      bot.sendMessage(chatId, "🧬 Bienvenue dans HarvestDex\n\nChoisis une section 👇", {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📘 Pokédex", web_app: { url: "https://poketerps.onrender.com" } }],
+            [{ text: "📘 Pokédex", web_app: { url: WEBAPP_URL } }],
             [{ text: "ℹ️ Informations", callback_data: "info" }],
             [{ text: "⭐ Reviews", callback_data: "reviews" }],
-            [{ text: "❤️ Soutenir", url: "https://t.me/TON_LIEN" }],
+            [{ text: "💚 Soutenir", callback_data: "support" }],
           ],
         },
       });
@@ -279,6 +279,53 @@ function sendStartMenu(chatId) {
 }
 
 bot.onText(/\/start/, (msg) => sendStartMenu(msg.chat.id));
+
+
+/* ================== WEBAPP SHARE (sendData) ================== */
+bot.on("message", async (msg) => {
+  const chatId = msg?.chat?.id;
+  const wad = msg?.web_app_data?.data;
+  if (!chatId || !wad) return;
+
+  try {
+    const payload = JSON.parse(wad);
+    if (payload?.action !== "share") return;
+
+    const id = Number(payload.cardId);
+    if (!id) return;
+
+    const card = await dbGetCard(id);
+    if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
+
+    const extra =
+      card.type === "weed"
+        ? card.weed_kind
+          ? ` • ${card.weed_kind}`
+          : ""
+        : card.micron
+          ? ` • ${card.micron}`
+          : "";
+
+    const rarity = card.rarity ? `
+Rareté: *${card.rarity}*` : "";
+
+    const text =
+      `📘 *${card.name}* (#${card.id})\n` +
+      `${typeLabel(card.type)}${extra}${rarity}\n` +
+      `${card.thc || ""}\n\n` +
+      `🧬 ${card.description || "—"}`;
+
+    bot.sendMessage(chatId, text, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [[{ text: "📘 Ouvrir dans HarvestDex", web_app: { url: WEBAPP_URL } }]],
+      },
+    });
+  } catch (e) {
+    console.error("❌ web_app_data:", e.message);
+  }
+});
+
 
 /* ================= CALLBACKS MENU ================= */
 bot.on("callback_query", async (query) => {
@@ -292,7 +339,7 @@ bot.on("callback_query", async (query) => {
   if (query.data === "info") {
     return bot.sendPhoto(chatId, "https://postimg.cc/3yKwCXyp", {
       caption:
-        "ℹ️ *Informations PokéTerps*\n\n" +
+        "ℹ️ *Informations HarvestDex*\n\n" +
         "🌿 Projet éducatif sur le THC & les terpènes\n\n" +
         "📌 Catégories:\n" +
         "• Hash / Extraction / WPFF → microns (120u/90u/73u/45u)\n" +
@@ -305,220 +352,38 @@ bot.on("callback_query", async (query) => {
 
   if (query.data === "back") return sendStartMenu(chatId);
   if (query.data === "reviews") return bot.sendMessage(chatId, "⭐ Reviews en préparation...");
+
+
+  if (query.data === "support") {
+    return bot.sendMessage(chatId, "💚 *Soutenir HarvestDex* — choisis une option 👇", {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📣 Nous suivre", url: SUPPORT_FOLLOW_URL }],
+          [{ text: "🎮 Jouer", callback_data: "support_games" }],
+          [{ text: "☕ Faire un don", url: SUPPORT_DONATE_URL }],
+          [{ text: "⬅️ Retour", callback_data: "back" }],
+        ],
+      },
+    });
+  }
+
+  if (query.data === "support_games") {
+    return bot.sendMessage(chatId, "🎮 *Mini-jeux partenaires* (récompenses selon les règles du jeu).", {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🏍️ Moto Run", url: GAME_MOTO_URL }],
+          [{ text: "🚗 Drift Arena", url: GAME_DRIFT_URL }],
+          [{ text: "⬅️ Retour", callback_data: "support" }],
+        ],
+      },
+    });
+  }
+
 });
 
-/* ================== STATS HELPERS ================== */
-function isoDayRange(dateStr) {
-  // dateStr: "YYYY-MM-DD"
-  const d0 = new Date(`${dateStr}T00:00:00.000Z`);
-  const d1 = new Date(`${dateStr}T00:00:00.000Z`);
-  d1.setUTCDate(d1.getUTCDate() + 1);
-  return { start: d0.toISOString(), end: d1.toISOString() };
-}
-
-function todayUTC() {
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(now.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function yesterdayUTC() {
-  const now = new Date();
-  now.setUTCDate(now.getUTCDate() - 1);
-  const y = now.getUTCFullYear();
-  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(now.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-async function fetchEventsInRange(startIso, endIso) {
-  assertSupabase();
-  // si tu as énormément de data, on mettra pagination. Là c’est OK pour démarrer.
-  const { data, error } = await sb
-    .from("track_events")
-    .select("event,session_id,card_id,ts")
-    .gte("ts", startIso)
-    .lt("ts", endIso)
-    .limit(10000);
-
-  if (error) throw error;
-  return data || [];
-}
-
-function buildStats(events) {
-  const byEvent = new Map();
-  const sessionsAll = new Set();
-  const sessionsOpen = new Set();
-  const cardViews = new Map();
-
-  for (const e of events) {
-    sessionsAll.add(String(e.session_id));
-
-    // total par event
-    const k = String(e.event);
-    byEvent.set(k, (byEvent.get(k) || 0) + 1);
-
-    // "personnes" = sessions uniques qui ont réellement ouvert l'app
-    if (k === "open_app") sessionsOpen.add(String(e.session_id));
-
-    // top cards
-    if (k === "view_card" && e.card_id != null) {
-      const cid = String(e.card_id);
-      cardViews.set(cid, (cardViews.get(cid) || 0) + 1);
-    }
-    if (k === "view_featured" && e.card_id != null) {
-      const cid = String(e.card_id);
-      cardViews.set(cid, (cardViews.get(cid) || 0) + 1);
-    }
-  }
-
-  const byEventSorted = [...byEvent.entries()].sort((a, b) => b[1] - a[1]);
-
-  const topCards = [...cardViews.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8);
-
-  return {
-    unique_sessions_any: sessionsAll.size,
-    unique_sessions_open_app: sessionsOpen.size,
-    byEventSorted,
-    topCards,
-  };
-}
-
-async function formatStatsMessage(label, startIso, endIso) {
-  const rows = await fetchEventsInRange(startIso, endIso);
-  const s = buildStats(rows);
-
-  const lines = [];
-  lines.push(`📊 *Stats PokéTerps* — *${label}*`);
-  lines.push("");
-  lines.push(`👥 Sessions uniques (open_app): *${s.unique_sessions_open_app}*`);
-  lines.push(`🧾 Sessions uniques (tous events): *${s.unique_sessions_any}*`);
-  lines.push(`🧠 Total events: *${rows.length}*`);
-  lines.push("");
-
-  lines.push("🖱️ *Clics / actions (top)*");
-  if (!s.byEventSorted.length) {
-    lines.push("—");
-  } else {
-    for (const [ev, n] of s.byEventSorted.slice(0, 12)) {
-      lines.push(`• \`${ev}\` : *${n}*`);
-    }
-  }
-
-  lines.push("");
-  lines.push("🔥 *Top fiches vues*");
-  if (!s.topCards.length) {
-    lines.push("—");
-  } else {
-    // on enrichit avec noms si possible (petit fetch batch)
-    const ids = s.topCards.map(([cid]) => Number(cid)).filter((x) => Number.isFinite(x));
-    let names = new Map();
-    try {
-      const { data } = await sb.from("cards").select("id,name").in("id", ids);
-      (data || []).forEach((c) => names.set(String(c.id), c.name));
-    } catch {}
-
-    for (const [cid, n] of s.topCards) {
-      const nm = names.get(cid);
-      lines.push(`• #${cid}${nm ? ` — ${nm}` : ""} : *${n}*`);
-    }
-  }
-
-  return lines.join("\n");
-}
-
-/* ================== COMMANDES STATS + TRACKING ================== */
-bot.onText(/^\/trackstatus$/, async (msg) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    const s = await dbGetSetting("tracking");
-    const paused = Boolean(s?.value_json?.paused);
-    return bot.sendMessage(chatId, paused ? "⏸️ Tracking: *PAUSE*" : "▶️ Tracking: *ACTIF*", { parse_mode: "Markdown" });
-  } catch (e) {
-    return bot.sendMessage(chatId, `❌ /trackstatus: ${e.message}`);
-  }
-});
-
-bot.onText(/^\/trackpause$/, async (msg) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    await dbUpsertSetting("tracking", { paused: true });
-    return bot.sendMessage(chatId, "⏸️ Tracking mis en *pause*.", { parse_mode: "Markdown" });
-  } catch (e) {
-    return bot.sendMessage(chatId, `❌ /trackpause: ${e.message}`);
-  }
-});
-
-bot.onText(/^\/trackresume$/, async (msg) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    await dbUpsertSetting("tracking", { paused: false });
-    return bot.sendMessage(chatId, "▶️ Tracking *réactivé*.", { parse_mode: "Markdown" });
-  } catch (e) {
-    return bot.sendMessage(chatId, `❌ /trackresume: ${e.message}`);
-  }
-});
-
-bot.onText(/^\/stats$/, async (msg) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    const d = todayUTC();
-    const { start, end } = isoDayRange(d);
-    const text = await formatStatsMessage(d, start, end);
-    return bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
-  } catch (e) {
-    return bot.sendMessage(chatId, `❌ /stats: ${e.message}`);
-  }
-});
-
-bot.onText(/^\/statsyesterday$/, async (msg) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    const d = yesterdayUTC();
-    const { start, end } = isoDayRange(d);
-    const text = await formatStatsMessage(d, start, end);
-    return bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
-  } catch (e) {
-    return bot.sendMessage(chatId, `❌ /statsyesterday: ${e.message}`);
-  }
-});
-
-// /statsrange 2026-01-01 2026-01-07  (end inclusif côté humain)
-bot.onText(/^\/statsrange\s+(\d{4}-\d{2}-\d{2})\s+(\d{4}-\d{2}-\d{2})$/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  if (!isAdmin(chatId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    const d1 = match[1];
-    const d2 = match[2];
-
-    const start = new Date(`${d1}T00:00:00.000Z`);
-    const end = new Date(`${d2}T00:00:00.000Z`);
-    end.setUTCDate(end.getUTCDate() + 1); // inclusif
-
-    const label = `${d1} → ${d2}`;
-    const text = await formatStatsMessage(label, start.toISOString(), end.toISOString());
-    return bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
-  } catch (e) {
-    return bot.sendMessage(chatId, `❌ /statsrange: ${e.message}`);
-  }
-});
-
-/* ================== COMMANDES ADMIN (tes commandes existantes) ================== */
+/* ================== COMMANDES ADMIN ================== */
 bot.onText(/^\/myid$/, (msg) => bot.sendMessage(msg.chat.id, `Ton chat_id = ${msg.chat.id}`));
 
 bot.onText(/^\/adminhelp$/, (msg) => {
@@ -527,7 +392,7 @@ bot.onText(/^\/adminhelp$/, (msg) => {
 
   bot.sendMessage(
     chatId,
-    "👑 *Commandes Admin PokéTerps*\n\n" +
+    "👑 *Commandes Admin HarvestDex*\n\n" +
       "✅ /dbtest *(test Supabase)*\n" +
       "✅ /list [hash|weed|extraction|wpff|120u|90u|73u|45u|indica|sativa|hybrid]\n" +
       "✅ /addform *(ajout guidé : weed_kind ou microns selon type)*\n" +
@@ -539,13 +404,6 @@ bot.onText(/^\/adminhelp$/, (msg) => {
       "✅ /rare id (titre optionnel)\n" +
       "✅ /unrare\n" +
       "✅ /rareinfo\n\n" +
-      "📊 *Stats / Tracking*\n" +
-      "✅ /stats\n" +
-      "✅ /statsyesterday\n" +
-      "✅ /statsrange YYYY-MM-DD YYYY-MM-DD\n" +
-      "✅ /trackstatus\n" +
-      "✅ /trackpause\n" +
-      "✅ /trackresume\n\n" +
       "*fields /edit:* name,type,micron,weed_kind,thc,description,img,advice,terpenes,aroma,effects",
     { parse_mode: "Markdown" }
   );
@@ -718,6 +576,7 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
       "terpenes",
       "aroma",
       "effects",
+      "rarity",
     ]);
     if (!allowedFields.has(field)) return bot.sendMessage(chatId, "❌ Champ invalide.");
 
@@ -731,6 +590,7 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
       if (!allowedTypes.has(newType)) return bot.sendMessage(chatId, "❌ type invalide: hash|weed|extraction|wpff");
       patch.type = newType;
 
+      // règles : weed => weed_kind obligatoire + pas de micron
       if (newType === "weed") {
         patch.micron = null;
         patch.weed_kind = card.weed_kind || "hybrid";
@@ -740,16 +600,21 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
     } else if (field === "micron") {
       const v = value === "-" ? null : value.toLowerCase();
       if (v && !isMicron(v)) return bot.sendMessage(chatId, "❌ micron invalide: 120u|90u|73u|45u (ou `-`)");
+
+      // pas de micron pour weed
       if (String(card.type).toLowerCase() === "weed") {
         return bot.sendMessage(chatId, "❌ Weed n’a pas de micron. Modifie weed_kind.");
       }
+
       patch.micron = v;
     } else if (field === "weed_kind") {
       const v = value === "-" ? null : value.toLowerCase();
       if (v && !isWeedKind(v)) return bot.sendMessage(chatId, "❌ weed_kind invalide: indica|sativa|hybrid (ou `-`)");
+
       if (String(card.type).toLowerCase() !== "weed") {
         return bot.sendMessage(chatId, "❌ weed_kind existe seulement pour le type weed.");
       }
+
       patch.weed_kind = v || "hybrid";
     } else if (["terpenes", "aroma", "effects"].includes(field)) {
       patch[field] = csvToArr(value);
@@ -827,6 +692,7 @@ async function addFinish(chatId) {
   if (!state) return;
   const d = state.data;
 
+  // sécurité logique
   const t = String(d.type || "").toLowerCase();
 
   const payload = {
@@ -946,6 +812,7 @@ bot.on("callback_query", async (query) => {
 
     state.data.type = t;
 
+    // weed => weed_kind, sinon micron
     if (t === "weed") {
       state.step = "weed_kind";
       addWizard.set(chatId, state);
@@ -966,7 +833,7 @@ bot.on("callback_query", async (query) => {
     if (!isWeedKind(k)) return;
 
     state.data.weed_kind = k;
-    state.data.micron = "";
+    state.data.micron = ""; // sécurité
     state.step = "thc";
     addWizard.set(chatId, state);
 
@@ -983,7 +850,7 @@ bot.on("callback_query", async (query) => {
 
     const m = query.data.replace("add_micron_", "");
     state.data.micron = m === "none" ? "" : m;
-    state.data.weed_kind = null;
+    state.data.weed_kind = null; // sécurité
     state.step = "thc";
     addWizard.set(chatId, state);
 
@@ -1057,6 +924,8 @@ bot.on("callback_query", async (query) => {
       if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
 
       const isWeed = String(card.type).toLowerCase() === "weed";
+
+      // si weed => propose weed_kind, sinon micron
       const line2 = isWeed
         ? [{ text: "Weed Kind", callback_data: `edit_field_${id}_weed_kind` }, { text: "THC", callback_data: `edit_field_${id}_thc` }]
         : [{ text: "Micron", callback_data: `edit_field_${id}_micron` }, { text: "THC", callback_data: `edit_field_${id}_thc` }];
@@ -1084,6 +953,7 @@ bot.on("callback_query", async (query) => {
     const id = Number(parts[2]);
     const field = parts.slice(3).join("_");
 
+    // menus spéciaux
     if (field === "type") {
       return bot.sendMessage(chatId, `🔁 Nouveau type pour #${id} :`, {
         reply_markup: {
@@ -1316,4 +1186,4 @@ bot.on("message", async (msg) => {
   }
 });
 
-app.listen(PORT, () => console.log("Serveur PokéTerps lancé sur le port", PORT));
+app.listen(PORT, () => console.log("Serveur HarvestDex lancé sur le port", PORT));

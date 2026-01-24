@@ -6,49 +6,13 @@
     tg.expand();
   }
 
-  /* ================= TRACKING (NEW) ================= */
-  function getSessionId() {
-    const k = "poketerps_session_id_v1";
-    let id = null;
-    try {
-      id = localStorage.getItem(k);
-      if (!id) {
-        id =
-          (crypto?.randomUUID?.() ||
-            `${Date.now()}_${Math.random().toString(16).slice(2)}`);
-        localStorage.setItem(k, id);
-      }
-    } catch {
-      id =
-        (crypto?.randomUUID?.() ||
-          `${Date.now()}_${Math.random().toString(16).slice(2)}`);
-    }
-    return id;
-  }
-
-  async function track(event, payload = {}) {
-    try {
-      await fetch("/api/track", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: getSessionId(),
-          event,
-          ...payload,
-        }),
-      });
-    } catch {
-      // silencieux (pas bloquant)
-    }
-  }
-
-  /* ================= FALLBACK (si API KO) ================= */
+  /* ================= FALLBACK DATA (si API KO) ================= */
   const fallbackPokedex = [
     {
       id: 101,
       name: "Static Hash (exemple)",
       type: "hash",
-      micron: "90u",
+      micron: null,
       weed_kind: null,
       thc: "THC: 35–55% (exemple)",
       desc: "Hash sec, texture sableuse, très parfumé.",
@@ -62,96 +26,77 @@
 
   /* ================= HELPERS ================= */
   const $ = (id) => document.getElementById(id);
-
-  const typeLabel = (t) =>
-    ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF" }[t] ||
-      t);
-  const weedKindLabel = (k) =>
-    ({ indica: "Indica", sativa: "Sativa", hybrid: "Hybrid" }[k] || k);
-  const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
-
   const safeStr = (v) => (v == null ? "" : String(v));
   const norm = (v) => safeStr(v).trim().toLowerCase();
+
+  const typeLabel = (t) =>
+    ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF" }[t] || t);
+
+  const weedKindLabel = (k) =>
+    ({ indica: "Indica", sativa: "Sativa", hybrid: "Hybrid" }[k] || k);
+
+  const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
+
+  const rarityOrder = ["COMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC"];
+  const rarityLabel = (r) => ({
+    COMMON: "Commun",
+    RARE: "Rare",
+    EPIC: "Épique",
+    LEGENDARY: "Légendaire",
+    MYTHIC: "Mythique",
+  }[String(r || "").toUpperCase()] || String(r || "").toUpperCase() || "—");
+
+  function rarityScore(r) {
+    const x = String(r || "").toUpperCase();
+    const i = rarityOrder.indexOf(x);
+    return i === -1 ? 0 : i;
+  }
+
 
   function cardDesc(c) {
     return c.desc ?? c.description ?? c.profile ?? "—";
   }
 
-  function parseThcNumber(thcText) {
-    const s = safeStr(thcText);
-    const nums = s.match(/(\d+([.,]\d+)?)/g);
-    if (!nums || !nums.length) return -1;
-    return Math.max(
-      ...nums
-        .map((x) => parseFloat(x.replace(",", ".")))
-        .filter((n) => !Number.isNaN(n))
-    );
-  }
-
   function toast(msg) {
-    const el = $("toast");
-    if (!el) return;
-    el.textContent = msg;
-    el.style.display = "block";
+    const t = $("toast");
+    if (!t) return;
+    t.textContent = msg;
+    t.style.display = "block";
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => (el.style.display = "none"), 1600);
+    toast._t = setTimeout(() => (t.style.display = "none"), 1400);
   }
 
-  function scrollToDetails() {
-    $("pokeName")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  /* ================= STORAGE ================= */
-  const LS_FAV = "poketerps_favs_v1";
-  const LS_SHINY = "poketerps_shiny_mode_v1";
-  const LS_FEATURED_VIEWS = "poketerps_featured_views_v1";
-
-  function loadFavs() {
+  function haptic(kind = "impact", style = "light") {
     try {
-      const raw = localStorage.getItem(LS_FAV);
-      const arr = JSON.parse(raw || "[]");
-      return new Set(Array.isArray(arr) ? arr.map(String) : []);
-    } catch {
-      return new Set();
-    }
-  }
-  function saveFavs(set) {
-    try {
-      localStorage.setItem(LS_FAV, JSON.stringify([...set]));
+      tg?.HapticFeedback?.impactOccurred?.(style);
     } catch {}
   }
 
-  function getFeaturedViews(featuredId) {
-    try {
-      const raw = localStorage.getItem(LS_FEATURED_VIEWS);
-      const obj = JSON.parse(raw || "{}");
-      return Number(obj[String(featuredId)] || 0) || 0;
-    } catch {
-      return 0;
-    }
-  }
-  function incFeaturedViews(featuredId) {
-    try {
-      const raw = localStorage.getItem(LS_FEATURED_VIEWS);
-      const obj = JSON.parse(raw || "{}");
-      const k = String(featuredId);
-      obj[k] = (Number(obj[k] || 0) || 0) + 1;
-      localStorage.setItem(LS_FEATURED_VIEWS, JSON.stringify(obj));
-      return obj[k];
-    } catch {
-      return 0;
-    }
+  function parseThcScore(thcText) {
+    // essaie d’extraire un nombre "max" depuis "THC: 70–90%" ou "70-90"
+    const s = safeStr(thcText);
+    const nums = (s.match(/\d+(\.\d+)?/g) || []).map(Number).filter((n) => !Number.isNaN(n));
+    if (!nums.length) return 0;
+    return Math.max(...nums);
   }
 
   /* ================= ELEMENTS ================= */
   const listEl = $("list");
   const countBadge = $("countBadge");
   const favBadge = $("favBadge");
+
   const searchInput = $("searchInput");
   const clearBtn = $("clearBtn");
   const closeBtn = $("closeBtn");
   const randomBtn = $("randomBtn");
   const shareBtn = $("shareBtn");
+
+  const themeBtn = $("themeBtn");
+  const sortSelect = $("sortSelect");
+  const favToggle = $("favToggle");
+  const favBtn = $("favBtn");
+
+  const subChips = $("subChips");
 
   const pokeName = $("pokeName");
   const pokeId = $("pokeId");
@@ -161,7 +106,10 @@
   const pokeThc = $("pokeThc");
   const pokeDesc = $("pokeDesc");
 
-  const themeBtn = $("themeBtn");
+  // skeletons
+  const listSkeleton = $("listSkeleton");
+  const detailsSkeleton = $("detailsSkeleton");
+  const detailsReal = $("detailsReal");
 
   // featured
   const featuredBox = $("featuredBox");
@@ -172,23 +120,10 @@
   const featuredLine = $("featuredLine");
   const featuredViewBtn = $("featuredViewBtn");
   const featuredCount = $("featuredCount");
-  const sparkles = $("sparkles");
-
-  // skeletons
-  const listSkeleton = $("listSkeleton");
-  const detailsSkeleton = $("detailsSkeleton");
-  const detailsReal = $("detailsReal");
-
-  // controls
-  const sortSelect = $("sortSelect");
-  const favToggle = $("favToggle");
-  const favBtn = $("favBtn");
-
-  // sub chips
-  const subChips = $("subChips");
+  const sparklesWrap = $("sparkles");
 
   if (!listEl || !countBadge || !searchInput) {
-    console.error("❌ IDs HTML manquants (list, countBadge, searchInput)");
+    console.error("❌ IDs HTML manquants");
     return;
   }
 
@@ -199,110 +134,115 @@
   let pokedex = [];
   let featured = null;
 
-  let favs = loadFavs();
-  let favOnly = false;
+  let sortMode = "new";     // new | az | thc
+  let showFavOnly = false;
 
-  /* ================= UI TOGGLES ================= */
-  function setLoading(on) {
-    if (listSkeleton) listSkeleton.style.display = on ? "block" : "none";
-    if (detailsSkeleton) detailsSkeleton.style.display = on ? "block" : "none";
-    if (detailsReal) detailsReal.style.display = on ? "none" : "block";
-  }
+  const micronValues = ["120u", "90u", "73u", "45u"];
+  const weedKindValues = ["indica", "sativa", "hybrid"];
 
-  function updateFavBadge() {
-    if (!favBadge) return;
-    favBadge.textContent = `❤️ ${favs.size}`;
-  }
+  /* ================= PERSIST ================= */
+  const LS = {
+    fav: "harvestdex_favs_v1",
+    theme: "harvestdex_theme_v1",
+  };
 
-  function setShinyMode(on) {
-    document.body.classList.toggle("shiny-mode", Boolean(on));
-    if (themeBtn) themeBtn.textContent = on ? "✨ Shiny ON" : "✨ Shiny";
+  function loadFavs() {
     try {
-      localStorage.setItem(LS_SHINY, on ? "1" : "0");
+      const raw = localStorage.getItem(LS.fav);
+      const arr = JSON.parse(raw || "[]");
+      return new Set((Array.isArray(arr) ? arr : []).map(String));
+    } catch {
+      return new Set();
+    }
+  }
+  function saveFavs(set) {
+    try {
+      localStorage.setItem(LS.fav, JSON.stringify([...set]));
     } catch {}
   }
 
-  function initShinyMode() {
+  let favs = loadFavs();
+
+
+  const userId = tg?.initDataUnsafe?.user?.id;
+
+  async function loadFavsFromServer() {
+    if (!userId) return null;
     try {
-      const v = localStorage.getItem(LS_SHINY);
-      setShinyMode(v === "1");
-    } catch {
-      setShinyMode(false);
+      const res = await fetch(`/api/mydex/${userId}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const cards = await res.json();
+      const set = new Set((Array.isArray(cards) ? cards : []).map((c) => String(c.id)));
+      return set;
+    } catch (e) {
+      console.warn("⚠️ favs server KO, fallback local:", e?.message || e);
+      return null;
     }
   }
 
-  /* ================= SUB CHIPS ================= */
-  const MICRONS = ["120u", "90u", "73u", "45u"];
-  const WEEDKINDS = ["indica", "sativa", "hybrid"];
-
-  function renderSubChips() {
-    if (!subChips) return;
-
-    let items = [];
-    if (activeType === "hash" || activeType === "extraction" || activeType === "wpff") {
-      items = ["all", ...MICRONS];
-    } else if (activeType === "weed") {
-      items = ["all", ...WEEDKINDS];
-    } else {
-      items = [];
-    }
-
-    if (!items.length) {
-      subChips.style.display = "none";
-      subChips.innerHTML = "";
-      activeSub = "all";
-      return;
-    }
-
-    subChips.style.display = "flex";
-    subChips.innerHTML = "";
-
-    items.forEach((v) => {
-      const btn = document.createElement("button");
-      btn.className = "btn btn-sm pill-btn";
-      btn.dataset.sub = v;
-
-      if (v === "all") btn.textContent = "Sous-cat: Tous";
-      else if (WEEDKINDS.includes(v)) btn.textContent = weedKindLabel(v);
-      else btn.textContent = v;
-
-      if (v === activeSub) btn.classList.add("active");
-
-      btn.addEventListener("click", () => {
-        activeSub = v;
-        [...subChips.querySelectorAll("button")].forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        renderList();
-      });
-
-      subChips.appendChild(btn);
+  async function toggleFavServer(cardId) {
+    if (!userId) return null;
+    const res = await fetch("/api/favorite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId, card_id: Number(cardId) }),
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+
+  function applyThemeFromStorage() {
+    const v = localStorage.getItem(LS.theme) || "normal";
+    document.body.classList.toggle("shiny-mode", v === "shiny");
+    if (themeBtn) themeBtn.textContent = v === "shiny" ? "✨ Shiny ON" : "✨ Shiny";
+  }
+
+  function toggleTheme() {
+    const isShiny = document.body.classList.toggle("shiny-mode");
+    localStorage.setItem(LS.theme, isShiny ? "shiny" : "normal");
+    if (themeBtn) themeBtn.textContent = isShiny ? "✨ Shiny ON" : "✨ Shiny";
+    toast(isShiny ? "✨ Mode Shiny activé" : "✨ Mode Shiny désactivé");
+    haptic("impact", "medium");
+  }
+
+  /* ================= SKELETON ================= */
+  function setLoading(isLoading) {
+    if (listSkeleton) listSkeleton.style.display = isLoading ? "block" : "none";
+    if (detailsSkeleton) detailsSkeleton.style.display = isLoading ? "block" : "none";
+    if (detailsReal) detailsReal.style.display = isLoading ? "none" : "block";
   }
 
   /* ================= LOAD FROM API ================= */
   async function loadCards() {
-    const res = await fetch("/api/cards", { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    try {
+      const res = await fetch("/api/cards", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
 
-    const mapped = (Array.isArray(data) ? data : []).map((c) => ({
-      id: Number(c.id) || c.id,
-      name: c.name || "Sans nom",
-      type: c.type || "hash",
-      micron: c.micron ?? null,
-      weed_kind: c.weed_kind ?? null,
-      thc: c.thc || "—",
-      desc: cardDesc(c),
-      img: c.img || "https://i.imgur.com/0HqWQvH.png",
-      terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
-      aroma: Array.isArray(c.aroma) ? c.aroma : [],
-      effects: Array.isArray(c.effects) ? c.effects : [],
-      advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
-      is_featured: Boolean(c.is_featured),
-      featured_title: c.featured_title || null,
-    }));
+      const mapped = (Array.isArray(data) ? data : []).map((c) => ({
+        id: Number(c.id) || c.id,
+        name: c.name || "Sans nom",
+        type: c.type || "hash",
+        micron: c.micron ?? null,
+        weed_kind: c.weed_kind ?? null,
+        thc: c.thc || "—",
+        desc: cardDesc(c),
+        img: c.img || "https://i.imgur.com/0HqWQvH.png",
+        terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
+        aroma: Array.isArray(c.aroma) ? c.aroma : [],
+        effects: Array.isArray(c.effects) ? c.effects : [],
+        advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
+        is_featured: Boolean(c.is_featured),
+        featured_title: c.featured_title || null,
+        rarity: (c.rarity || "").toUpperCase() || "COMMON",
+      }));
 
-    pokedex = mapped.length ? mapped : fallbackPokedex;
+      pokedex = mapped.length ? mapped : fallbackPokedex;
+    } catch (e) {
+      console.error("❌ /api/cards KO :", e);
+      pokedex = fallbackPokedex;
+    }
   }
 
   async function loadFeatured() {
@@ -334,6 +274,7 @@
         effects: Array.isArray(c.effects) ? c.effects : [],
         advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
         featured_title: c.featured_title || "✨ Shiny du moment",
+        rarity: (c.rarity || "").toUpperCase() || "COMMON",
       };
 
       renderFeatured();
@@ -343,60 +284,123 @@
     }
   }
 
-  /* ================= FEATURED RENDER ================= */
+  function extraText(card) {
+    const t = norm(card.type);
+    if (t === "weed") return card.weed_kind ? ` • ${weedKindLabel(norm(card.weed_kind))}` : "";
+    return card.micron ? ` • ${norm(card.micron)}` : "";
+  }
+
+  /* ================= SPARKLES ================= */
   function makeSparkles() {
-    if (!sparkles) return;
-    sparkles.innerHTML = "";
-    const pts = [
-      [8, 18],[16, 62],[28, 34],[44, 18],[62, 30],[74, 60],[88, 28]
+    if (!sparklesWrap) return;
+    sparklesWrap.innerHTML = "";
+
+    const spots = [
+      { top: "14%", left: "10%", d: 0.0 },
+      { top: "26%", left: "24%", d: 0.4 },
+      { top: "12%", left: "52%", d: 0.2 },
+      { top: "34%", left: "66%", d: 0.6 },
+      { top: "16%", left: "86%", d: 0.1 },
+      { top: "60%", left: "14%", d: 0.5 },
+      { top: "72%", left: "46%", d: 0.3 },
+      { top: "64%", left: "80%", d: 0.7 },
     ];
-    pts.forEach(([x, y], i) => {
-      const s = document.createElement("div");
-      s.className = "sparkle";
-      s.style.left = `${x}%`;
-      s.style.top = `${y}%`;
-      s.style.animationDelay = `${(i * 0.22).toFixed(2)}s`;
-      s.style.opacity = String(0.18 + (i % 3) * 0.12);
-      sparkles.appendChild(s);
+
+    spots.forEach((s) => {
+      const el = document.createElement("div");
+      el.className = "sparkle";
+      el.style.top = s.top;
+      el.style.left = s.left;
+      el.style.animationDelay = `${s.d}s`;
+      sparklesWrap.appendChild(el);
     });
   }
 
-  function featuredMetaText(c) {
-    if (!c) return "—";
-    if (c.type === "weed" && c.weed_kind) return `#${c.id} • ${typeLabel(c.type)} • ${weedKindLabel(c.weed_kind)}`;
-    if (c.type !== "weed" && c.micron) return `#${c.id} • ${typeLabel(c.type)} • ${c.micron}`;
-    return `#${c.id} • ${typeLabel(c.type)}`;
-  }
-
+  /* ================= FEATURED ================= */
   function renderFeatured() {
     if (!featuredBox || !featured) return;
     featuredBox.style.display = "block";
 
-    makeSparkles();
-
     if (featuredImg) featuredImg.src = featured.img;
     if (featuredTitle) featuredTitle.textContent = featured.featured_title || "✨ Shiny du moment";
     if (featuredName) featuredName.textContent = featured.name;
-    if (featuredMeta) featuredMeta.textContent = featuredMetaText(featured);
+    if (featuredMeta) featuredMeta.textContent = `#${featured.id} • ${typeLabel(featured.type)}${extraText(featured)}`;
     if (featuredLine) featuredLine.textContent = `🧬 ${cardDesc(featured)}`;
 
-    if (featuredCount) {
-      featuredCount.style.display = "inline-block";
-      featuredCount.textContent = `Rare #${featured.id}`;
+    // compteur
+    try {
+      const total = pokedex.length || 0;
+      const pos = total ? (pokedex.findIndex((x) => String(x.id) === String(featured.id)) + 1) : 0;
+      if (featuredCount && total) {
+        featuredCount.style.display = "inline-block";
+        featuredCount.textContent = `Rare #${pos || 1}/${total}`;
+      }
+    } catch {}
+
+    // sparkles
+    makeSparkles();
+
+    featuredViewBtn?.addEventListener("click", () => {
+      selectCard(featured);
+      toast("✨ Rare affiché !");
+      haptic("impact", "medium");
+      $("pokeName")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  /* ================= SUB-CHIPS ================= */
+  function chipBtn(label, value, active = false) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `btn btn-sm ${active ? "btn-danger" : "btn-outline-light"}`;
+    btn.textContent = label;
+    btn.dataset.sub = value;
+    btn.style.borderRadius = "999px";
+    return btn;
+  }
+
+  function renderSubChips() {
+    if (!subChips) return;
+    subChips.innerHTML = "";
+
+    if (activeType === "all") {
+      activeSub = "all";
+      subChips.style.display = "none";
+      return;
     }
 
-    if (featuredViewBtn) {
-      featuredViewBtn.onclick = () => {
-        // local counter
-        const views = incFeaturedViews(featured.id);
-        toast(`✨ Rare vu (${views})`);
+    subChips.style.display = "flex";
 
-        // server tracking
-        track("view_featured", { card_id: featured.id });
-
-        selectCard(featured, { scroll: true, fromFeatured: true });
-      };
+    let options = [];
+    if (activeType === "weed") {
+      options = [
+        { label: "Tous", value: "all" },
+        { label: "Indica", value: "indica" },
+        { label: "Sativa", value: "sativa" },
+        { label: "Hybrid", value: "hybrid" },
+      ];
+      if (activeSub !== "all" && !weedKindValues.includes(activeSub)) activeSub = "all";
+    } else {
+      options = [
+        { label: "Tous", value: "all" },
+        { label: "120u", value: "120u" },
+        { label: "90u", value: "90u" },
+        { label: "73u", value: "73u" },
+        { label: "45u", value: "45u" },
+      ];
+      if (activeSub !== "all" && !micronValues.includes(activeSub)) activeSub = "all";
     }
+
+    options.forEach((opt) => {
+      const btn = chipBtn(opt.label, opt.value, activeSub === opt.value);
+      btn.addEventListener("click", () => {
+        activeSub = opt.value;
+        renderSubChips();
+        renderList();
+        haptic("impact", "light");
+      });
+      subChips.appendChild(btn);
+    });
   }
 
   /* ================= FILTERS ================= */
@@ -419,59 +423,52 @@
     return hay.includes(q);
   }
 
-  function typeOk(card) {
-    return activeType === "all" || norm(card.type) === activeType;
+  function subMatch(card) {
+    if (activeType === "all" || activeSub === "all") return true;
+    const t = norm(card.type);
+    if (t === "weed") return norm(card.weed_kind) === activeSub;
+    return norm(card.micron) === activeSub;
   }
 
-  function subOk(card) {
-    if (activeSub === "all") return true;
-
-    if (activeType === "weed") return norm(card.weed_kind) === activeSub;
-    if (activeType === "hash" || activeType === "extraction" || activeType === "wpff") return norm(card.micron) === activeSub;
-
-    return true;
-  }
-
-  function favOk(card) {
-    if (!favOnly) return true;
+  function favMatch(card) {
+    if (!showFavOnly) return true;
     return favs.has(String(card.id));
+  }
+
+  function sorted(arr) {
+    const copy = [...arr];
+    if (sortMode === "az") {
+      copy.sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+    } else if (sortMode === "thc") {
+      copy.sort((a, b) => parseThcScore(b.thc) - parseThcScore(a.thc));
+    } else if (sortMode === "rarity") {
+      copy.sort((a, b) => rarityScore(b.rarity) - rarityScore(a.rarity));
+    } else {
+      // "new": plus grand id en premier (simple et efficace)
+      copy.sort((a, b) => Number(b.id) - Number(a.id));
+    }
+    return copy;
   }
 
   function filteredList() {
     const q = norm(searchInput.value);
-    return pokedex.filter((p) => typeOk(p) && subOk(p) && favOk(p) && matchesQuery(p, q));
-  }
-
-  /* ================= SORT ================= */
-  function sortCards(arr) {
-    const mode = sortSelect?.value || "new";
-    const out = [...arr];
-
-    if (mode === "az") {
-      out.sort((a, b) => safeStr(a.name).localeCompare(safeStr(b.name), "fr", { sensitivity: "base" }));
-      return out;
-    }
-    if (mode === "thc") {
-      out.sort((a, b) => parseThcNumber(b.thc) - parseThcNumber(a.thc));
-      return out;
-    }
-
-    out.sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
-    return out;
+    const base = pokedex.filter((p) => {
+      const typeOk = activeType === "all" || norm(p.type) === activeType;
+      return typeOk && subMatch(p) && favMatch(p) && matchesQuery(p, q);
+    });
+    return sorted(base);
   }
 
   /* ================= RENDER LIST ================= */
-  function listMetaLine(p) {
-    if (p.type === "weed" && p.weed_kind) return `${typeLabel(p.type)} • ${weedKindLabel(p.weed_kind)}`;
-    if (p.type !== "weed" && p.micron) return `${typeLabel(p.type)} • ${p.micron}`;
-    return `${typeLabel(p.type)}`;
+  function updateBadges(itemsCount) {
+    countBadge.textContent = itemsCount;
+    if (favBadge) favBadge.textContent = `❤️ ${favs.size}`;
+    if (favToggle) favToggle.classList.toggle("active", showFavOnly);
   }
 
   function renderList() {
-    let items = filteredList();
-    items = sortCards(items);
-
-    countBadge.textContent = items.length;
+    const items = filteredList();
+    updateBadges(items.length);
     listEl.innerHTML = "";
 
     if (!items.length) {
@@ -479,62 +476,64 @@
       return;
     }
 
-    const featuredId = featured ? String(featured.id) : null;
-
     items.forEach((p) => {
       const btn = document.createElement("button");
       btn.className =
         "list-group-item list-group-item-action bg-black text-white border-secondary d-flex align-items-center gap-2 rounded-3 mb-2";
 
-      const shinyBadge =
-        featuredId && String(p.id) === featuredId
-          ? `<span class="badge text-bg-warning text-dark ms-2">✨ Shiny</span>`
-          : "";
+      const extra = extraText(p);
 
-      const favBadgeMini = favs.has(String(p.id))
-        ? `<span class="badge text-bg-warning text-dark ms-2">❤️</span>`
+      const isShiny = featured && String(p.id) === String(featured.id);
+      const shinyBadge = isShiny
+        ? `<span class="badge text-bg-warning text-dark" style="margin-left:6px;">✨ SHINY</span>`
+        : "";
+
+      const isFav = favs.has(String(p.id));
+      const favMark = isFav
+        ? `<span class="badge text-bg-danger" style="margin-left:6px;">❤️</span>`
         : "";
 
       btn.innerHTML = `
-        <img src="${p.img}" width="40" height="40" style="object-fit:cover;border-radius:8px;" />
+        <img src="${p.img}" width="40" height="40" style="object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.10);" />
         <div class="flex-grow-1 text-start">
-          <div class="fw-semibold">${p.name}${shinyBadge}${favBadgeMini}</div>
-          <div class="small text-secondary">#${p.id} • ${listMetaLine(p)}</div>
+          <div class="fw-semibold">${p.name} ${shinyBadge} ${rarityBadge} ${favMark}</div>
+          <div class="small text-secondary">#${p.id} • ${typeLabel(p.type)}${extra}</div>
         </div>
         <span class="badge text-bg-danger">Voir</span>
       `;
 
-      btn.onclick = () => selectCard(p, { scroll: true });
+      btn.onclick = () => {
+        selectCard(p);
+        haptic("impact", "light");
+      };
       listEl.appendChild(btn);
     });
   }
 
   /* ================= SELECT ================= */
-  function updateFavBtn() {
+  function refreshFavBtn() {
     if (!favBtn || !selected) return;
-    const inFav = favs.has(String(selected.id));
-    favBtn.textContent = inFav ? "❤️ Retirer des favoris" : "❤️ Ajouter aux favoris";
+    const isFav = favs.has(String(selected.id));
+    favBtn.textContent = isFav ? "✅ Dans tes favoris" : "❤️ Ajouter aux favoris";
+    favBtn.className = isFav ? "btn btn-sm btn-warning w-100" : "btn btn-sm btn-outline-warning w-100";
   }
 
-  function selectCard(p, opts = {}) {
+  function selectCard(p) {
     selected = p;
 
     if (pokeName) pokeName.textContent = p.name;
     if (pokeId) pokeId.textContent = `#${p.id}`;
-
-    const cat = listMetaLine(p);
-    if (pokeType) pokeType.textContent = cat;
-
+    if (pokeType) pokeType.textContent = `${typeLabel(p.type)}${extraText(p)} • ${rarityLabel(p.rarity)}`;
     if (pokeThc) pokeThc.textContent = p.thc;
 
     if (pokeDesc) {
+      const line0 = `⭐ Rareté: ${rarityLabel(p.rarity)}`;
       const line1 = `🧬 Profil: ${cardDesc(p) || "—"}`;
       const line2 = `🌿 Terpènes: ${formatList(p.terpenes)}`;
       const line3 = `👃 Arômes: ${formatList(p.aroma)}`;
       const line4 = `🧠 Effets (ressenti): ${formatList(p.effects)}`;
       const line5 = `⚠️ Conseils: ${p.advice || "—"}`;
-
-      pokeDesc.textContent = [line1, "", line2, line3, line4, "", line5].join("\n");
+      pokeDesc.textContent = [line0, line1, "", line2, line3, line4, "", line5].join("\n");
     }
 
     if (pokeImg) {
@@ -543,12 +542,7 @@
     }
     if (placeholder) placeholder.style.display = "none";
 
-    updateFavBtn();
-
-    // server tracking
-    track("view_card", { card_id: p.id });
-
-    if (opts.scroll) scrollToDetails();
+    refreshFavBtn();
   }
 
   /* ================= EVENTS ================= */
@@ -558,7 +552,6 @@
     searchInput.value = "";
     renderList();
     toast("Recherche effacée");
-    track("search_clear");
   });
 
   document.querySelectorAll(".chip").forEach((btn) => {
@@ -566,86 +559,133 @@
       document.querySelectorAll(".chip").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
 
-      activeType = btn.dataset.type || "all";
+      activeType = btn.dataset.type;
       activeSub = "all";
       renderSubChips();
       renderList();
-
-      track("filter_type", { meta: { type: activeType } });
+      haptic("impact", "light");
     });
   });
 
   sortSelect?.addEventListener("change", () => {
+    sortMode = sortSelect.value;
     renderList();
-    toast("Tri appliqué");
-    track("sort", { meta: { sort: sortSelect.value } });
+    toast(sortMode === "az" ? "Tri: A–Z" : sortMode === "thc" ? "Tri: THC haut" : sortMode === "rarity" ? "Tri: Rareté" : "Tri: Nouveau");
   });
+
+  
+  // Tab bar (Dex / Mon Dex)
+  const tabDex = $("tabDex");
+  const tabMyDex = $("tabMyDex");
+
+  function setTab(which) {
+    const isMy = which === "my";
+    showFavOnly = isMy;
+    tabDex?.classList.toggle("active", !isMy);
+    tabMyDex?.classList.toggle("active", isMy);
+    renderList();
+    toast(isMy ? "Mon Dex ❤️" : "Dex 📘");
+    haptic("impact", "light");
+  }
+
+  tabDex?.addEventListener("click", () => setTab("dex"));
+  tabMyDex?.addEventListener("click", () => setTab("my"));
+
 
   favToggle?.addEventListener("click", () => {
-    favOnly = !favOnly;
-    favToggle.classList.toggle("active", favOnly);
-    favToggle.textContent = favOnly ? "❤️ Favoris ON" : "❤️ Favoris";
+    showFavOnly = !showFavOnly;
     renderList();
-    track("fav_toggle", { meta: { favOnly } });
+    toast(showFavOnly ? "Mode Favoris ❤️" : "Mode Normal");
+    haptic("impact", "medium");
   });
 
-  favBtn?.addEventListener("click", () => {
+  favBtn?.addEventListener("click", async () => {
     if (!selected) return;
-    const k = String(selected.id);
 
-    const willRemove = favs.has(k);
+    const id = String(selected.id);
 
-    if (willRemove) {
-      favs.delete(k);
-      toast("Retiré des favoris");
-    } else {
-      favs.add(k);
-      toast("Ajouté aux favoris");
+    // 1) Essaye serveur (si Supabase + API OK)
+    try {
+      if (userId) {
+        await toggleFavServer(selected.id);
+        const serverSet = await loadFavsFromServer();
+        if (serverSet) {
+          favs = serverSet;
+          // garde aussi un cache local (optionnel)
+          saveFavs(favs);
+          refreshFavBtn();
+          renderList();
+          toast(favs.has(id) ? "Ajouté aux favoris ❤️" : "Retiré des favoris");
+          haptic("impact", "medium");
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("⚠️ toggle fav server KO:", e?.message || e);
     }
 
+    // 2) Fallback local
+    if (favs.has(id)) {
+      favs.delete(id);
+      toast("Retiré des favoris");
+    } else {
+      favs.add(id);
+      toast("Ajouté aux favoris ❤️");
+    }
     saveFavs(favs);
-    updateFavBadge();
-    updateFavBtn();
+    refreshFavBtn();
     renderList();
-
-    track(willRemove ? "fav_remove" : "fav_add", { card_id: selected.id });
-  });
-
-  themeBtn?.addEventListener("click", () => {
-    const on = !document.body.classList.contains("shiny-mode");
-    setShinyMode(on);
-    toast(on ? "✨ Shiny ON" : "✨ Shiny OFF");
-    track("theme_toggle", { meta: { on } });
+    haptic("impact", "medium");
   });
 
   randomBtn?.addEventListener("click", () => {
-    const items = sortCards(filteredList());
+    const items = filteredList();
     if (!items.length) return;
 
-    track("random");
-
+    // fun: 15% chance d’aller sur la rare
     if (featured && Math.random() < 0.15) {
-      const views = incFeaturedViews(featured.id);
-      toast(`✨ Shiny du moment (${views})`);
-      return selectCard(featured, { scroll: true, fromFeatured: true });
+      selectCard(featured);
+      toast("✨ Random → Rare !");
+      return;
     }
 
-    selectCard(items[Math.floor(Math.random() * items.length)], { scroll: true });
+    selectCard(items[Math.floor(Math.random() * items.length)]);
+    toast("🎲 Random !");
   });
 
   shareBtn?.addEventListener("click", async () => {
     if (!selected) return;
 
-    track("share", { card_id: selected.id });
+    // Si on est dans Telegram WebApp, envoie au bot (plus clean)
+    try {
+      if (tg?.sendData) {
+        tg.sendData(JSON.stringify({ action: "share", cardId: selected.id }));
+        toast("Envoyé au bot ✅");
+        haptic("impact", "medium");
+        return;
+      }
+    } catch {}
 
     const shareText =
-      `🧬 ${selected.name} (#${selected.id})\n` +
-      `Catégorie: ${listMetaLine(selected)}\n` +
-      `${selected.thc}\n\n` +
-      `🌿 Terpènes: ${formatList(selected.terpenes)}\n` +
-      `👃 Arômes: ${formatList(selected.aroma)}\n` +
-      `🧠 Effets (ressenti): ${formatList(selected.effects)}\n\n` +
-      `🧬 Profil: ${cardDesc(selected)}\n\n` +
+      `📘 ${selected.name} (#${selected.id})
+` +
+      `Catégorie: ${typeLabel(selected.type)}${extraText(selected)}
+` +
+      `Rareté: ${rarityLabel(selected.rarity)}
+` +
+      `${selected.thc}
+
+` +
+      `🌿 Terpènes: ${formatList(selected.terpenes)}
+` +
+      `👃 Arômes: ${formatList(selected.aroma)}
+` +
+      `🧠 Effets (ressenti): ${formatList(selected.effects)}
+
+` +
+      `🧬 Profil: ${cardDesc(selected)}
+
+` +
       `⚠️ ${selected.advice || "Info éducative. Les effets varient."}`;
 
     try {
@@ -653,9 +693,7 @@
       return;
     } catch {}
 
-    try {
-      await navigator.clipboard?.writeText(shareText);
-    } catch {}
+    try { await navigator.clipboard?.writeText(shareText); } catch {}
 
     tg?.showPopup({
       title: "Partager",
@@ -663,39 +701,38 @@
       buttons: [{ type: "ok" }],
     });
   });
+  });
 
   closeBtn?.addEventListener("click", () => {
     if (tg) tg.close();
     else window.close();
   });
 
+  themeBtn?.addEventListener("click", toggleTheme);
+
   /* ================= INIT ================= */
   (async () => {
-    initShinyMode();
-    updateFavBadge();
-
+    applyThemeFromStorage();
     setLoading(true);
 
-    // NEW: open_app tracking
-    track("open_app");
-
-    try {
-      await loadCards();
-    } catch (e) {
-      console.error("❌ loadCards:", e);
-      pokedex = fallbackPokedex;
-    }
-
+    await loadCards();
     await loadFeatured();
+
+    // Favoris: essaie serveur, sinon cache local
+    const serverSet = await loadFavsFromServer();
+    if (serverSet) {
+      favs = serverSet;
+      saveFavs(favs);
+    }
 
     renderSubChips();
     renderList();
 
-    if (featured) {
-      const v = getFeaturedViews(featured.id);
-      if (v > 0) toast(`✨ Déjà vu ${v} fois`);
-    }
-
     setLoading(false);
+
+    // si featured existe, petit “wow”
+    if (featured) {
+      toast("✨ Shiny du moment chargé");
+    }
   })();
 })();

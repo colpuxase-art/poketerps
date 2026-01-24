@@ -1,35 +1,44 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-  <title>Admin PokéTerps</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin HarvestDex</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif;
+      background:#0b0d14; color:#fff; padding:16px; }
+    .card{ border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:14px; background:rgba(255,255,255,.04); }
+    code{ background:rgba(0,0,0,.45); padding:2px 6px; border-radius:8px; }
+    .muted{ color: rgba(255,255,255,.70); }
+    .btn{ border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.06); color:#fff; padding:10px 12px; border-radius:12px; width:100%; font-weight:800; }
+  </style>
 </head>
 <body>
+  <h1>🛠️ Admin HarvestDex</h1>
+  <p class="muted">L’admin se fait via le bot (commandes privées). Cette page sert de mémo.</p>
 
-<h1>🛠️ Admin</h1>
+  <div class="card">
+    <h3>Commandes principales</h3>
+    <ul>
+      <li><code>/adminhelp</code> — toutes les commandes (admin only)</li>
+      <li><code>/addform</code> — ajout guidé</li>
+      <li><code>/editform</code> — modification guidée</li>
+      <li><code>/delform</code> — suppression guidée</li>
+      <li><code>/list</code> — lister les fiches</li>
+      <li><code>/rare id (titre)</code> — définir “Shiny du moment”</li>
+      <li><code>/unrare</code> — enlever le shiny</li>
+    </ul>
+  </div>
 
-<input id="name" placeholder="Nom Pokémon">
-<input id="rating" placeholder="Note (1-5)">
-<button onclick="addPokemon()">Ajouter</button>
+  <p style="margin-top:14px;">
+    <button class="btn" onclick="window.Telegram?.WebApp?.close?.()">Fermer</button>
+  </p>
 
-<script>
-const tg = window.Telegram.WebApp;
-tg.expand();
-
-function addPokemon() {
-  fetch("/api/pokemons", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-telegram-id": tg.initDataUnsafe.user.id
-    },
-    body: JSON.stringify({
-      name: document.getElementById("name").value,
-      rating: document.getElementById("rating").value
-    })
-  }).then(() => alert("✅ Pokémon ajouté"));
-}
-</script>
-
+  <script>
+    const tg = window.Telegram?.WebApp;
+    tg?.ready?.();
+    tg?.expand?.();
+  </script>
 </body>
 </html>
