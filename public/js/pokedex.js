@@ -1,5 +1,5 @@
 /* =========================================================
-   HARVESTDEX — FRONT LOGIC (FINAL)
+   HARVESTDEX — FRONT (REDESIGN + FIX VISIBILITY + RANDOM)
    ========================================================= */
 
 const tg = window.Telegram?.WebApp;
@@ -12,43 +12,101 @@ let favorites = new Set();
 let showMyDex = false;
 let selectedCard = null;
 
-const listEl = document.getElementById("list");
-const detailEl = document.getElementById("detail");
+const el = (id) => document.getElementById(id);
 
-const tabDex = document.getElementById("tab-dex");
-const tabMyDex = document.getElementById("tab-mydex");
+const listEl = el("list");
+const emptyEl = el("empty");
+const toastEl = el("toast");
 
-const filterType = document.getElementById("filter-type");
-const filterSeason = document.getElementById("filter-season");
-const filterRarity = document.getElementById("filter-rarity");
+const tabDex = el("tab-dex");
+const tabMyDex = el("tab-mydex");
+
+const filterType = el("filter-type");
+const filterSeason = el("filter-season");
+const filterRarity = el("filter-rarity");
+const searchEl = el("search");
+
+const btnRefresh = el("btn-refresh");
+const btnRandom = el("btn-random");
 
 // detail
-const dImg = document.getElementById("detail-img");
-const dName = document.getElementById("detail-name");
-const dDesc = document.getElementById("detail-desc");
-const dThc = document.getElementById("detail-thc");
-const dTerp = document.getElementById("detail-terp");
-const dAroma = document.getElementById("detail-aroma");
-const dEffects = document.getElementById("detail-effects");
-const bType = document.getElementById("badge-type");
-const bSeason = document.getElementById("badge-season");
-const bRarity = document.getElementById("badge-rarity");
-
-const btnFav = document.getElementById("btn-fav");
-const btnShare = document.getElementById("btn-share");
-const btnClose = document.getElementById("close-detail");
+const sheet = el("detail");
+const dImg = el("detail-img");
+const dName = el("detail-name");
+const dDesc = el("detail-desc");
+const dThc = el("detail-thc");
+const dTerp = el("detail-terp");
+const dAroma = el("detail-aroma");
+const dEffects = el("detail-effects");
+const bType = el("badge-type");
+const bSeason = el("badge-season");
+const bRarity = el("badge-rarity");
+const btnFav = el("btn-fav");
+const btnShare = el("btn-share");
+const btnClose = el("close-detail");
 
 init();
 
 async function init() {
-  await Promise.all([loadCards(), loadSeasons()]);
-  await loadFavorites();
-  renderList();
   bindEvents();
+  await bootstrap();
+}
+
+async function bootstrap() {
+  try {
+    toast("Chargement…");
+    await Promise.all([loadSeasons(), loadCards()]);
+    await loadFavorites();
+    render();
+    toast("");
+  } catch (e) {
+    console.error(e);
+    toast("Erreur: impossible de charger les cartes. Ouvre /api/cards.");
+    render();
+  }
+}
+
+function bindEvents() {
+  tabDex.onclick = () => {
+    showMyDex = false;
+    tabDex.classList.add("active");
+    tabMyDex.classList.remove("active");
+    render();
+  };
+
+  tabMyDex.onclick = () => {
+    showMyDex = true;
+    tabMyDex.classList.add("active");
+    tabDex.classList.remove("active");
+    render();
+  };
+
+  filterType.onchange = filterSeason.onchange = filterRarity.onchange = () => render();
+  searchEl.oninput = () => render();
+
+  btnRefresh.onclick = async () => {
+    await bootstrap();
+  };
+
+  btnRandom.onclick = () => {
+    const pool = getFiltered();
+    if (!pool.length) return toast("Aucune carte à random.");
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    openDetail(pick);
+  };
+
+  btnClose.onclick = closeDetail;
+  btnFav.onclick = toggleFavorite;
+  btnShare.onclick = shareCard;
+
+  sheet.addEventListener("click", (e) => {
+    if (e.target === sheet) closeDetail();
+  });
 }
 
 async function loadCards() {
   const res = await fetch("/api/cards", { cache: "no-store" });
+  if (!res.ok) throw new Error(`/api/cards HTTP ${res.status}`);
   const data = await res.json();
   cards = Array.isArray(data) ? data : [];
 }
@@ -58,89 +116,76 @@ async function loadSeasons() {
   const data = await res.json();
   seasons = Array.isArray(data) ? data : [];
 
-  seasons.forEach((s) => {
+  filterSeason.innerHTML = `<option value="">Saison</option>`;
+  for (const s of seasons) {
     const opt = document.createElement("option");
     opt.value = s.id;
     opt.textContent = s.label;
     filterSeason.appendChild(opt);
-  });
+  }
 }
 
 async function loadFavorites() {
   if (!tg?.initDataUnsafe?.user) return;
   const uid = tg.initDataUnsafe.user.id;
-
   const res = await fetch(`/api/mydex/${uid}`, { cache: "no-store" });
   const favCards = await res.json();
   favorites = new Set((Array.isArray(favCards) ? favCards : []).map((c) => String(c.id)));
 }
 
-function bindEvents() {
-  tabDex.onclick = () => {
-    showMyDex = false;
-    tabDex.classList.add("active");
-    tabMyDex.classList.remove("active");
-    renderList();
-  };
+function getFiltered() {
+  const q = (searchEl.value || "").trim().toLowerCase();
 
-  tabMyDex.onclick = () => {
-    showMyDex = true;
-    tabMyDex.classList.add("active");
-    tabDex.classList.remove("active");
-    renderList();
-  };
-
-  filterType.onchange = filterSeason.onchange = filterRarity.onchange = renderList;
-  btnClose.onclick = closeDetail;
-  btnFav.onclick = toggleFavorite;
-  btnShare.onclick = shareCard;
-}
-
-function renderList() {
-  listEl.innerHTML = "";
-
-  let filtered = cards.filter((c) => {
+  return cards.filter((c) => {
     if (showMyDex && !favorites.has(String(c.id))) return false;
     if (filterType.value && c.type !== filterType.value) return false;
     if (filterSeason.value && c.season !== filterSeason.value) return false;
     if (filterRarity.value && c.rarity !== filterRarity.value) return false;
+    if (q) {
+      const hay = `${c.name || ""} ${c.description || ""} ${(c.terpenes || []).join(" ")} ${(c.aroma || []).join(" ")} ${(c.effects || []).join(" ")}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
+}
 
-  if (!filtered.length) {
-    listEl.innerHTML = "<p style='opacity:.6;padding:20px'>Aucune fiche</p>";
-    return;
-  }
+function render() {
+  listEl.innerHTML = "";
 
-  filtered.forEach((c) => {
+  const filtered = getFiltered();
+  emptyEl.classList.toggle("hidden", filtered.length > 0);
+
+  for (const c of filtered) {
     const card = document.createElement("div");
     card.className = "card";
     card.onclick = () => openDetail(c);
 
     card.innerHTML = `
-      <img src="${c.img || ""}" />
-      <div class="card-body">
-        <div class="card-title">${escapeHtml(c.name || "")}</div>
-        <div class="card-badges">
-          <span class="badge">${escapeHtml(String(c.type || "").toUpperCase())}</span>
+      <div class="thumb">
+        ${c.img ? `<img src="${escapeAttr(c.img)}" alt="">` : `<div style="height:120px;display:flex;align-items:center;justify-content:center;font-size:26px">🌾</div>`}
+        <div class="shine"></div>
+      </div>
+      <div class="body">
+        <div class="title">${escapeHtml(c.name || "")}</div>
+        <div class="sub">
+          <span class="badge">${escapeHtml(String((c.type || "").toUpperCase()))}</span>
           ${c.season ? `<span class="badge badge-season">${escapeHtml(c.season)}</span>` : ""}
           <span class="badge badge-rarity ${escapeHtml(c.rarity || "COMMON")}">${escapeHtml(c.rarity || "COMMON")}</span>
-          ${favorites.has(String(c.id)) ? `<span class="badge" style="border-color:#ef4444;color:#ef4444">❤</span>` : ""}
+          ${favorites.has(String(c.id)) ? `<span class="badge heart">❤</span>` : ""}
         </div>
       </div>
     `;
     listEl.appendChild(card);
-  });
+  }
 }
 
 function openDetail(c) {
   selectedCard = c;
-  detailEl.classList.remove("hidden");
+  sheet.classList.remove("hidden");
 
   dImg.src = c.img || "";
   dName.textContent = c.name || "";
   dDesc.textContent = c.desc || c.description || "—";
-
   dThc.textContent = c.thc || "—";
   dTerp.textContent = (c.terpenes || []).join(", ") || "—";
   dAroma.textContent = (c.aroma || []).join(", ") || "—";
@@ -155,12 +200,12 @@ function openDetail(c) {
 }
 
 function closeDetail() {
-  detailEl.classList.add("hidden");
+  sheet.classList.add("hidden");
   selectedCard = null;
 }
 
 async function toggleFavorite() {
-  if (!selectedCard || !tg?.initDataUnsafe?.user) return;
+  if (!selectedCard || !tg?.initDataUnsafe?.user) return toast("Ouvre via Telegram.");
   const uid = tg.initDataUnsafe.user.id;
 
   const res = await fetch("/api/favorite", {
@@ -175,22 +220,30 @@ async function toggleFavorite() {
   else favorites.delete(String(selectedCard.id));
 
   btnFav.textContent = json.favorited ? "💔 Retirer" : "❤️ Favori";
-  renderList();
+  render();
 }
 
 function shareCard() {
   if (!selectedCard) return;
-
-  // Telegram WebApp sendData -> bot receives msg.web_app_data
-  tg?.sendData?.(
-    JSON.stringify({
-      type: "share_card",
-      card_id: selectedCard.id,
-    })
-  );
+  tg?.sendData?.(JSON.stringify({ type: "share_card", card_id: selectedCard.id }));
+  toast("Envoyé au bot ✅");
 }
 
-// basic escape for innerHTML usage
+let toastTimer = null;
+function toast(msg) {
+  if (!msg) {
+    toastEl.classList.add("hidden");
+    toastEl.textContent = "";
+    return;
+  }
+  toastEl.textContent = msg;
+  toastEl.classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastEl.classList.add("hidden");
+  }, 2400);
+}
+
 function escapeHtml(str) {
   return String(str)
     .replaceAll("&", "&amp;")
@@ -198,4 +251,7 @@ function escapeHtml(str) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+function escapeAttr(str) {
+  return escapeHtml(str).replaceAll("`", "");
 }

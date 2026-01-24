@@ -10,9 +10,22 @@
 <body class="app">
   <header class="topbar">
     <div class="brand">
-      <span class="logo">🌾</span>
-      <span class="title">HarvestDex</span>
+      <div class="mark">
+        <span class="emoji">🌾</span>
+        <div class="stack">
+          <div class="name">HarvestDex</div>
+          <div class="tagline">Cartes • Saisons • Raretés</div>
+        </div>
+      </div>
+
+      <button id="btn-refresh" class="iconbtn" title="Rafraîchir">⟳</button>
     </div>
+
+    <div class="searchrow">
+      <input id="search" class="search" placeholder="Rechercher une carte..." />
+      <button id="btn-random" class="pill">🎲 Random</button>
+    </div>
+
     <div class="tabs">
       <button id="tab-dex" class="tab active">Dex</button>
       <button id="tab-mydex" class="tab">Mon Dex</button>
@@ -21,7 +34,7 @@
 
   <section class="filters">
     <select id="filter-type">
-      <option value="">Tous les types</option>
+      <option value="">Tous</option>
       <option value="hash">Hash</option>
       <option value="weed">Weed</option>
       <option value="extraction">Extraction</option>
@@ -29,11 +42,11 @@
     </select>
 
     <select id="filter-season">
-      <option value="">Toutes saisons</option>
+      <option value="">Saison</option>
     </select>
 
     <select id="filter-rarity">
-      <option value="">Toutes raretés</option>
+      <option value="">Rareté</option>
       <option value="COMMON">Common</option>
       <option value="RARE">Rare</option>
       <option value="EPIC">Epic</option>
@@ -42,32 +55,49 @@
     </select>
   </section>
 
-  <main id="list" class="card-list"></main>
+  <main id="list" class="grid"></main>
 
-  <div id="detail" class="detail hidden">
-    <button id="close-detail">✕</button>
+  <div id="empty" class="empty hidden">
+    <div class="emptycard">
+      <div class="emptytitle">Aucune carte affichée</div>
+      <div class="emptysub">Si tu viens d’ajouter une fiche : clique ⟳ puis réessaie.</div>
+      <a class="emptybtn" href="/api/cards" target="_blank" rel="noreferrer">Voir /api/cards</a>
+    </div>
+  </div>
 
-    <img id="detail-img" />
-    <h2 id="detail-name"></h2>
+  <div id="toast" class="toast hidden"></div>
 
-    <div class="badges">
-      <span id="badge-type" class="badge"></span>
-      <span id="badge-season" class="badge badge-season"></span>
-      <span id="badge-rarity" class="badge badge-rarity"></span>
+  <div id="detail" class="sheet hidden" role="dialog" aria-modal="true">
+    <div class="sheet-top">
+      <button id="close-detail" class="iconbtn">✕</button>
+      <div class="sheet-actions">
+        <button id="btn-fav" class="pill">❤️ Favori</button>
+        <button id="btn-share" class="pill">📤 Partager</button>
+      </div>
     </div>
 
-    <p id="detail-desc"></p>
-
-    <div class="meta">
-      <div><strong>THC:</strong> <span id="detail-thc"></span></div>
-      <div><strong>Terpènes:</strong> <span id="detail-terp"></span></div>
-      <div><strong>Arômes:</strong> <span id="detail-aroma"></span></div>
-      <div><strong>Effets:</strong> <span id="detail-effects"></span></div>
+    <div class="hero">
+      <img id="detail-img" alt="" />
+      <div class="hero-grad"></div>
+      <div class="hero-info">
+        <div id="detail-name" class="h1"></div>
+        <div class="badges">
+          <span id="badge-type" class="badge"></span>
+          <span id="badge-season" class="badge badge-season"></span>
+          <span id="badge-rarity" class="badge badge-rarity"></span>
+        </div>
+      </div>
     </div>
 
-    <div class="actions">
-      <button id="btn-fav">❤️ Favori</button>
-      <button id="btn-share">📤 Partager</button>
+    <div class="sheet-body">
+      <div id="detail-desc" class="desc"></div>
+
+      <div class="info">
+        <div class="row"><span>THC</span><b id="detail-thc"></b></div>
+        <div class="row"><span>Terpènes</span><b id="detail-terp"></b></div>
+        <div class="row"><span>Arômes</span><b id="detail-aroma"></b></div>
+        <div class="row"><span>Effets</span><b id="detail-effects"></b></div>
+      </div>
     </div>
   </div>
 
