@@ -1,1 +1,1 @@
-// HarvestDex FINAL PRO
+<INDEX_JS_PLACEHOLDER>

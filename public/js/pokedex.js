@@ -1,1 +1,1 @@
-// pokedex
+<POKEDEX_PLACEHOLDER>
