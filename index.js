@@ -180,44 +180,28 @@ app.get('/api/featured', async (req, res) => {
 /* ================= MENU /START ================= */
 function sendStartMenu(chatId, userId) {
   const isA = isAdmin(userId);
-  bot
-    .sendPhoto(chatId, START_IMAGE_URL, {
-      caption: `🌾 *HARVESTDEX*
-_Saisons • Raretés • Collection_
 
-➡️ Ouvre le Dex, ajoute des fiches à *Mon Dex* et collectionne 🔥`,
-      parse_mode: 'Markdown',
-    })
-    .then(() => {
-      const rows = [
-        [{ text: '📘 Ouvrir le Dex', web_app: { url: WEBAPP_URL } }],
-        [{ text: '⭐ Mon Dex`, web_app: { url: WEBAPP_URL + `#mydex' } }],
-        [{ text: '👤 Mon Profil`, web_app: { url: WEBAPP_URL + `#profile' } }],
-        [{ text: 'ℹ️ Informations`, callback_data: `menu_info' }],
-        [{ text: '🤝 Nous soutenir`, callback_data: `menu_support' }],
-      ];
-      if (isA) rows.push([{ text: '🧰 Admin`, callback_data: `menu_admin' }]);
+  const keyboard = [
+    [{ text: "📘 Ouvrir le Dex", web_app: { url: WEBAPP_URL } }],
+    [{ text: "⭐ Mon Dex", web_app: { url: WEBAPP_URL + "#mydex" } }],
+    [{ text: "👤 Mon Profil", web_app: { url: WEBAPP_URL + "#profile" } }],
+    [{ text: "ℹ️ Informations", callback_data: "menu_info" }],
+    [{ text: "🤝 Nous soutenir", callback_data: "menu_support" }]
+  ];
+  if (isA) keyboard.push([{ text: "🧰 Admin", callback_data: "menu_admin" }]);
 
-      return bot.sendMessage(chatId, 'Choisis une section 👇', {
-        reply_markup: { inline_keyboard: rows },
-      });
-    })
-    .catch(() => {
-      const rows = [
-        [{ text: '📘 Ouvrir le Dex', web_app: { url: WEBAPP_URL } }],
-        [{ text: '⭐ Mon Dex`, web_app: { url: WEBAPP_URL + `#mydex' } }],
-        [{ text: '👤 Mon Profil`, web_app: { url: WEBAPP_URL + `#profile' } }],
-        [{ text: 'ℹ️ Informations`, callback_data: `menu_info' }],
-        [{ text: '🤝 Nous soutenir`, callback_data: `menu_support' }],
-      ];
-      if (isA) rows.push([{ text: '🧰 Admin`, callback_data: `menu_admin' }]);
-
-      bot.sendMessage(chatId, '🌾 HarvestDex
-
-Choisis une section 👇', {
-        reply_markup: { inline_keyboard: rows },
-      });
+  bot.sendPhoto(chatId, START_IMAGE_URL, {
+    caption: `🌾 *HARVESTDEX*\n_Saisons • Raretés • Collection_\n\n➡️ Ouvre le Dex, ajoute des fiches à *Mon Dex* et collectionne 🔥`,
+    parse_mode: "Markdown",
+  }).then(() => {
+    return bot.sendMessage(chatId, "Choisis une section 👇", {
+      reply_markup: { inline_keyboard: keyboard }
     });
+  }).catch(() => {
+    bot.sendMessage(chatId, "🌾 HarvestDex\n\nChoisis une section 👇", {
+      reply_markup: { inline_keyboard: keyboard }
+    });
+  });
 }
 
 function sendInfoMenu(chatId) {
