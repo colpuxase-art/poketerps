@@ -197,7 +197,7 @@ function sendStartMenu(chatId, fromId) {
 
   const keyboard = [
     [{ text: "📘 Ouvrir le Dex", web_app: { url: WEBAPP_URL } }],
-    [{ text: "⭐ Mon Dex", web_app: { url: WEBAPP_URL + \"#mydex\" } }],
+    [{ text: "⭐ Mon Dex", web_app: { url: WEBAPP_URL + "#mydex" } }],
     [{ text: "ℹ️ Informations", callback_data: "info" }],
     [{ text: "🤝 Nous soutenir", callback_data: "support_menu" }],
   ];
