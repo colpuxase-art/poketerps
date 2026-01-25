@@ -4,6 +4,9 @@
   if (tg) {
     tg.ready();
     tg.expand();
+
+  const TG_USER = tg?.initDataUnsafe?.user || null;
+  const TG_UID = TG_USER?.id ? Number(TG_USER.id) : null;
   }
 
   /* ================= FALLBACK DATA (si API KO) ================= */
@@ -146,41 +149,6 @@
   }
 
   let favs = loadFavs();
-  let currentTab = 'dex';
-  let subcatMap = {};
-
-
-
-  /* ================= TELEGRAM / SUPABASE FAVORITES ================= */
-  const tg = window.Telegram?.WebApp;
-  tg?.ready?.();
-  tg?.expand?.();
-
-  const tgUserId = tg?.initDataUnsafe?.user?.id ? Number(tg.initDataUnsafe.user.id) : null;
-
-  async function apiGetSubcategories() {
-    try {
-      const r = await fetch("/api/subcategories", { cache: "no-store" });
-      return await r.json();
-    } catch { return []; }
-  }
-  async function apiGetMyDex() {
-    if (!tgUserId) return [];
-    try {
-      const r = await fetch(`/api/mydex/${tgUserId}`, { cache: "no-store" });
-      return await r.json();
-    } catch { return []; }
-  }
-  async function apiToggleFavorite(cardId) {
-    if (!tgUserId) return null;
-    const r = await fetch("/api/favorite", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: tgUserId, card_id: cardId }),
-    });
-    return await r.json();
-  }
-
 
   function applyThemeFromStorage() {
     const v = localStorage.getItem(LS.theme) || "normal";
@@ -204,6 +172,50 @@
   }
 
   /* ================= LOAD FROM API ================= */
+  let subcatMap = {};
+  async function loadSubcategories() {
+    try {
+      const res = await fetch("/api/subcategories", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      subcatMap = {};
+      (Array.isArray(data) ? data : []).forEach((s) => {
+        if (s && s.id != null) subcatMap[String(s.id)] = s.label || "";
+      });
+      // attach label to cards already loaded
+      if (Array.isArray(pokedex)) {
+        pokedex.forEach((c) => {
+          c.subcategory_label = c.subcategory_id != null ? (subcatMap[String(c.subcategory_id)] || "") : "";
+        });
+      }
+    } catch {
+      subcatMap = {};
+    }
+  }
+
+  async function loadFavsServer() {
+    if (!TG_UID) return null;
+    try {
+      const res = await fetch(`/api/mydex/${TG_UID}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return new Set((Array.isArray(data) ? data : []).map((c) => String(c.id)));
+    } catch {
+      return null;
+    }
+  }
+
+  async function toggleFavServer(cardId) {
+    if (!TG_UID) return null;
+    const res = await fetch("/api/favorite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: TG_UID, card_id: Number(cardId) }),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  }
+
   async function loadCards() {
     try {
       const res = await fetch("/api/cards", { cache: "no-store" });
@@ -274,8 +286,9 @@
 
   function extraText(card) {
     const t = norm(card.type);
-    if (t === "weed") return card.weed_kind ? ` • ${weedKindLabel(norm(card.weed_kind))}` : "";
-    return card.micron ? ` • ${norm(card.micron)}` : "";
+    const sub = card.subcategory_label ? ` • ${card.subcategory_label}` : "";
+    if (t === "weed") return (card.weed_kind ? ` • ${weedKindLabel(norm(card.weed_kind))}` : "") + sub;
+    return (card.micron ? ` • ${norm(card.micron)}` : "") + sub;
   }
 
   /* ================= SPARKLES ================= */
@@ -453,26 +466,6 @@
   }
 
   function renderList() {
-    // Profile view
-    const profileEl = document.getElementById("profilePanel");
-    if (currentTab === 'profile') {
-      if (profileEl) {
-        profileEl.classList.remove("d-none");
-        const name = tg?.initDataUnsafe?.user?.first_name || "Utilisateur";
-        const u = tgUserId ? `ID: ${tgUserId}` : "Ouvre via Telegram pour avoir ton profil.";
-        profileEl.innerHTML = `<div class="p-3 rounded-4 border border-warning bg-black">
-          <div class="h5 mb-1">👤 ${name}</div>
-          <div class="text-secondary small">${u}</div>
-          <div class="mt-2">⭐ Cartes dans Mon Dex : <b>${favs.size}</b></div>
-        </div>`;
-      }
-      // hide list and return
-      listEl.innerHTML = "";
-      return;
-    } else {
-      if (profileEl) profileEl.classList.add("d-none");
-    }
-
     const items = filteredList();
     updateBadges(items.length);
     listEl.innerHTML = "";
@@ -539,6 +532,9 @@
       const line4 = `🧠 Effets (ressenti): ${formatList(p.effects)}`;
       const line5 = `⚠️ Conseils: ${p.advice || "—"}`;
       pokeDesc.textContent = [line1, "", line2, line3, line4, "", line5].join("\n");
+    // auto scroll to description for easy reading
+    try { pokeDesc?.scrollIntoView({ behavior: "smooth", block: "start" }); } catch {}
+
     }
 
     if (pokeImg) {
@@ -548,8 +544,6 @@
     if (placeholder) placeholder.style.display = "none";
 
     refreshFavBtn();
-    // Auto-scroll to details for reading
-    try { document.getElementById('pokeDesc')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
   }
 
   /* ================= EVENTS ================= */
@@ -589,42 +583,40 @@
 
   favBtn?.addEventListener("click", async () => {
     if (!selected) return;
-    const idNum = Number(selected.id);
     const id = String(selected.id);
 
-    // If opened from Telegram: persist in Supabase
-    if (tgUserId) {
-      const res = await apiToggleFavorite(idNum);
-      if (res && typeof res.favorited === "boolean") {
-        if (res.favorited) {
-          favs.add(id);
-          toast("Ajouté à Mon Dex ⭐");
-        } else {
-          favs.delete(id);
-          toast("Retiré de Mon Dex");
-        }
-        saveFavs(favs); // keep local cache too
-        refreshFavBtn();
-    // Auto-scroll to details for reading
-    try { document.getElementById('pokeDesc')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
-        renderList();
-        haptic("impact", "medium");
-        return;
+    // Server sync if in Telegram
+    if (TG_UID) {
+      const r = await toggleFavServer(id);
+      if (r && r.favorited === false) {
+        favs.delete(id);
+        toast("Retiré de Mon Dex");
+      } else if (r && r.favorited === true) {
+        favs.add(id);
+        toast("Ajouté à Mon Dex ⭐");
+      } else {
+        toast("Erreur favoris");
       }
+    } else {
+      // local fallback
+      if (favs.has(id)) {
+        favs.delete(id);
+        toast("Retiré des favoris");
+      } else {
+        favs.add(id);
+        toast("Ajouté aux favoris ❤️");
+      }
+      saveFavs(favs);
     }
 
-    // Fallback local (hors Telegram)
-    if (favs.has(id)) {
-      favs.delete(id);
-      toast("Retiré des favoris");
-    } else {
-      favs.add(id);
-      toast("Ajouté aux favoris ❤️");
-    }
-    saveFavs(favs);
     refreshFavBtn();
-    // Auto-scroll to details for reading
-    try { document.getElementById('pokeDesc')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
+    renderList();
+    haptic("impact", "medium");
+  });
+
+  // keep local save for TG too (optional cache)
+  saveFavs(favs);
+    refreshFavBtn();
     renderList();
     haptic("impact", "medium");
   });
@@ -684,16 +676,70 @@
     setLoading(true);
 
     await loadCards();
+    await loadSubcategories();
     await loadFeatured();
+
+    // if telegram: replace local favs with server favs
+    const serverFavs = await loadFavsServer();
+    if (serverFavs) {
+      favs = serverFavs;
+      saveFavs(favs); // cache locally too
+      refreshFavBtn();
+    }
 
     renderSubChips();
     renderList();
 
-    setLoading(false);
+    // bottom nav
+    const navDex = document.getElementById("navDex");
+    const navMyDex = document.getElementById("navMyDex");
+    const navProfile = document.getElementById("navProfile");
+    const profileSheet = document.getElementById("profileSheet");
+    const profileClose = document.getElementById("profileClose");
+    const profileBody = document.getElementById("profileBody");
 
-    // si featured existe, petit “wow”
-    if (featured) {
-      toast("✨ Shiny du moment chargé");
+    function setActiveNav(which) {
+      [navDex, navMyDex, navProfile].forEach((b) => b?.classList.remove("active"));
+      if (which === "dex") navDex?.classList.add("active");
+      if (which === "mydex") navMyDex?.classList.add("active");
+      if (which === "profile") navProfile?.classList.add("active");
     }
+
+    navDex?.addEventListener("click", () => {
+      showFavOnly = false;
+      favToggle?.classList.remove("active");
+      setActiveNav("dex");
+      renderList();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    navMyDex?.addEventListener("click", () => {
+      showFavOnly = true;
+      favToggle?.classList.add("active");
+      setActiveNav("mydex");
+      renderList();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    navProfile?.addEventListener("click", () => {
+      setActiveNav("profile");
+      if (!profileSheet || !profileBody) return;
+      const name = TG_USER ? (TG_USER.first_name || TG_USER.username || "Utilisateur") : "Invité";
+      profileBody.innerHTML =
+        `<div style="font-weight:900; font-size:18px; margin-bottom:6px;">${name}</div>` +
+        `<div style="opacity:.85; margin-bottom:10px;">Fiches dans Mon Dex : <b>${favs.size}</b></div>` +
+        (TG_UID ? `<div style="opacity:.65">Telegram ID: ${TG_UID}</div>` : `<div style="opacity:.65">Ouvre dans Telegram pour sauvegarder en ligne.</div>`);
+      profileSheet.classList.remove("hidden");
+    });
+
+    profileClose?.addEventListener("click", () => profileSheet?.classList.add("hidden"));
+    profileSheet?.addEventListener("click", (e) => {
+      if (e.target === profileSheet) profileSheet.classList.add("hidden");
+    });
+
+    // Deep link from /start: #mydex
+    if (location.hash === "#mydex") navMyDex?.click();
+
+    setLoading(false);
   })();
 })();

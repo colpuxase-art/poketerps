@@ -11118,38 +11118,69 @@ footer.bg-black {
 }
 
 
-
-/* ================= HARVESTDEX OVERRIDES (DISCRET) ================= */
-:root{
-  --harvest-gold:#f5b942;
-  --harvest-mint:#2dd4bf;
-}
-
-/* Replace bootstrap danger accents with harvest gold */
-.border-danger{ border-color: rgba(245,185,66,.45)!important; }
-.text-bg-danger{ background: rgba(245,185,66,1)!important; color:#201507!important; }
-.btn-outline-danger{ border-color: rgba(245,185,66,.55)!important; color: rgba(245,185,66,1)!important; }
-.btn-outline-danger:hover{ background: rgba(245,185,66,1)!important; color:#201507!important; }
-.btn-danger{ background: rgba(245,185,66,1)!important; border-color: rgba(245,185,66,1)!important; color:#201507!important; }
-
-/* Bottom nav */
+/* ================== HarvestDex Bottom Nav + Profile ================== */
 .bottom-nav{
-  position:fixed; left:0; right:0; bottom:0; z-index:9999;
-  display:flex; gap:10px; padding:10px 12px;
-  background: rgba(0,0,0,.55);
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display:flex;
+  gap:10px;
+  padding:10px;
+  border-radius:16px;
+  background: rgba(10,12,20,.78);
+  border: 1px solid rgba(255,255,255,.12);
   backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(255,255,255,.10);
+  z-index: 9999;
 }
 .bn-item{
-  flex:1; height:44px; border-radius:999px;
-  border:1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.06);
-  color: rgba(255,255,255,.85);
-  font-weight: 800;
+  flex:1;
+  padding:10px 12px;
+  border-radius:14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.92);
+  font-weight: 700;
 }
 .bn-item.active{
-  background: linear-gradient(90deg, rgba(245,185,66,1), rgba(45,212,191,1));
-  color:#061018;
-  border-color: rgba(245,185,66,.45);
+  background: rgba(245,185,66,.18);
+  border-color: rgba(245,185,66,.55);
+  color: #f5b942;
 }
-body{ padding-bottom: 78px; } /* avoid hidden content under nav */
+
+/* Profile sheet */
+.profile-sheet{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  padding: 16px;
+  z-index: 10000;
+}
+.profile-sheet.hidden{ display:none; }
+.ps-card{
+  width: 100%;
+  max-width: 520px;
+  border-radius: 22px;
+  background: rgba(12,14,20,.92);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 24px 80px rgba(0,0,0,.55);
+}
+.ps-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+.ps-title{ font-weight: 900; letter-spacing: .2px; }
+.ps-close{
+  border:0;
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.9);
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+.ps-body{ padding: 14px 16px; color: rgba(255,255,255,.85); }
