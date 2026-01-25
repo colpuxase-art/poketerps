@@ -1,3 +1,11 @@
+
+  function dedupeBottomBar() {
+    const bars = document.querySelectorAll("#bottomBar");
+    bars.forEach((b, i) => { if (i > 0) b.remove(); });
+    const modals = document.querySelectorAll("#profileModal");
+    modals.forEach((m, i) => { if (i > 0) m.remove(); });
+  }
+
 (() => {
   /* ================= TELEGRAM ================= */
   const tg = window.Telegram?.WebApp;
@@ -52,7 +60,13 @@
     toast._t = setTimeout(() => (t.style.display = "none"), 1400);
   }
 
-  function haptic(kind = "impact", style = "light") {
+  
+  function scrollToDetails() {
+    const el = document.getElementById("detailsCard") || document.getElementById("details") || document.querySelector(".details-card");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+function haptic(kind = "impact", style = "light") {
     try {
       tg?.HapticFeedback?.impactOccurred?.(style);
     } catch {}

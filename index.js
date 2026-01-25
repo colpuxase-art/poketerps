@@ -170,6 +170,42 @@ app.get("/api/cards", async (req, res) => {
   }
 });
 
+
+
+app.get("/api/subcategories", (req, res) => {
+  res.json([
+  { id: "dry_sift", type: "hash", label: "Dry Sift", sort: 10 },
+  { id: "static_sift", type: "hash", label: "Static Sift", sort: 15 },
+  { id: "kief_pollen", type: "hash", label: "Kief / Pollen", sort: 18 },
+  { id: "ice_o_lator", type: "hash", label: "Ice-O-Lator / Bubble", sort: 20 },
+  { id: "full_melt", type: "hash", label: "Full Melt", sort: 25 },
+  { id: "temple_ball", type: "hash", label: "Temple Ball", sort: 30 },
+  { id: "piatella", type: "hash", label: "Piatella", sort: 35 },
+  { id: "charas", type: "hash", label: "Charas / Hand Rubbed", sort: 40 },
+  { id: "pressed_hash", type: "hash", label: "Pressed Hash", sort: 45 },
+  { id: "flower", type: "weed", label: "Flower", sort: 10 },
+  { id: "small_buds", type: "weed", label: "Small Buds", sort: 20 },
+  { id: "trim", type: "weed", label: "Trim", sort: 30 },
+  { id: "rosin", type: "extraction", label: "Rosin", sort: 10 },
+  { id: "live_rosin", type: "extraction", label: "Live Rosin", sort: 12 },
+  { id: "resin", type: "extraction", label: "Resin", sort: 18 },
+  { id: "live_resin", type: "extraction", label: "Live Resin", sort: 20 },
+  { id: "shatter", type: "extraction", label: "Shatter", sort: 30 },
+  { id: "wax", type: "extraction", label: "Wax", sort: 32 },
+  { id: "budder_badder", type: "extraction", label: "Budder / Badder", sort: 34 },
+  { id: "crumble", type: "extraction", label: "Crumble", sort: 36 },
+  { id: "diamonds", type: "extraction", label: "Diamonds", sort: 38 },
+  { id: "sauce", type: "extraction", label: "Sauce", sort: 40 },
+  { id: "distillate", type: "extraction", label: "Distillate", sort: 50 },
+  { id: "co2_oil", type: "extraction", label: "CO₂ Oil", sort: 55 },
+  { id: "rso", type: "extraction", label: "RSO", sort: 60 },
+  { id: "wpff_fresh_frozen", type: "wpff", label: "Fresh Frozen", sort: 10 },
+  { id: "wpff_whole_plant", type: "wpff", label: "Whole Plant", sort: 12 },
+  { id: "wpff_first_pull", type: "wpff", label: "First Pull", sort: 20 },
+  { id: "wpff_full_spectrum", type: "wpff", label: "Full Spectrum", sort: 30 }
+]);
+});
+
 /* ================== API FEATURED (Rare du moment) ================== */
 app.get("/api/featured", async (req, res) => {
   try {
