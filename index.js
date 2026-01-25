@@ -52,7 +52,7 @@ const ADMIN_IDS = new Set([6675436692]); // ✅ ton ID
 const isAdmin = (chatId) => ADMIN_IDS.has(chatId);
 
 const allowedTypes = new Set(['hash','weed','extraction','wpff']);
-const micronValues = [\\\\\`120u\\\\`, \\\`90u\\`, \\`73u\\\`, \\\\`45u\\\\\`];
+const micronValues = ['120u','90u','73u','45u'];
 const weedKindValues = [\\\\\`indica\\\\`, \\\`sativa\\\`, \\\\`hybrid\\\\\`];
 
 const isMicron = (v) => micronValues.includes(String(v || \\\\\`\\\\\`).toLowerCase());
