@@ -20,16 +20,15 @@ const PORT = process.env.PORT || 3000;
 const TOKEN = process.env.BOT_TOKEN; // ✅ Render
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-const WEBAPP_URL = process.env.WEBAPP_URL; // mini-app url
-const START_IMAGE_URL = process.env.START_IMAGE_URL || "";
-const SUPPORT_FOLLOW_URL = process.env.SUPPORT_FOLLOW_URL || "https://t.me/";
-const SUPPORT_DONATE_URL = process.env.SUPPORT_DONATE_URL || "https://t.me/";
-const GAME_MOTO_URL = process.env.GAME_MOTO_URL || "https://example.com/moto";
-const GAME_DRIFT_URL = process.env.GAME_DRIFT_URL || "https://example.com/drift";
+const WEBAPP_URL = process.env.WEBAPP_URL || "https://poketerps.onrender.com"; // ✅ WebApp URL
+// Images (URL en dur, pas besoin de Render)
+const START_IMAGE_URL = "https://i.postimg.cc/9Qp0JmJY/harvestdex-start.jpg";
+const INFO_IMAGE_URL  = "https://i.postimg.cc/3w3qj7tK/harvestdex-info.jpg";
+
 
 // ⚠️ stop net si token manquant (sinon 401)
-if (!TOKEN || !WEBAPP_URL || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-  console.error("❌ Variables d\'environnement manquantes. Obligatoires : BOT_TOKEN, WEBAPP_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE");
+if (!TOKEN) {
+  console.error("❌ BOT_TOKEN manquant (Render -> Environment).");
   process.exit(1);
 }
 
@@ -177,196 +176,224 @@ app.get("/api/featured", async (req, res) => {
     res.status(500).json({ error: "db_error", message: e.message });
   }
 });
-/* ================== API: seasons & subcategories ================== */
-app.get("/api/seasons", async (req, res) => {
-  try {
-    const { data, error } = await sb.from("seasons").select("*").order("id", { ascending: false });
-    if (error) throw error;
-    res.set("Cache-Control", "no-store");
-    res.json(data || []);
-  } catch (e) {
-    res.status(500).json({ error: "seasons_failed", message: e.message });
-  }
-});
-
-app.get("/api/subcategories", async (req, res) => {
-  try {
-    const { data, error } = await sb
-      .from("subcategories")
-      .select("*")
-      .eq("is_active", true)
-      .order("sort", { ascending: true });
-    if (error) throw error;
-    res.set("Cache-Control", "no-store");
-    res.json(data || []);
-  } catch (e) {
-    res.status(500).json({ error: "subcats_failed", message: e.message });
-  }
-});
-
-/* ================== API: favorites (Mon Dex) ================== */
-app.post("/api/favorite", async (req, res) => {
-  try {
-    const { user_id, card_id } = req.body || {};
-    if (!user_id || !card_id) return res.status(400).json({ error: "missing_user_or_card" });
-
-    const { data: exists, error: e1 } = await sb
-      .from("favorites")
-      .select("id")
-      .eq("user_id", user_id)
-      .eq("card_id", card_id)
-      .maybeSingle();
-    if (e1) throw e1;
-
-    if (exists) {
-      const { error } = await sb.from("favorites").delete().eq("id", exists.id);
-      if (error) throw error;
-      return res.json({ favorited: false });
-    }
-
-    const { error } = await sb.from("favorites").insert({ user_id, card_id });
-    if (error) throw error;
-    return res.json({ favorited: true });
-  } catch (e) {
-    res.status(500).json({ error: "favorite_failed", message: e.message });
-  }
-});
-
-app.get("/api/mydex/:uid", async (req, res) => {
-  try {
-    const uid = Number(req.params.uid);
-    const { data: favs, error } = await sb.from("favorites").select("card_id").eq("user_id", uid);
-    if (error) throw error;
-    const ids = (favs || []).map((x) => x.card_id).filter(Boolean);
-    if (!ids.length) return res.json([]);
-    const { data: cards, error: e2 } = await sb.from("cards").select("*").in("id", ids);
-    if (e2) throw e2;
-    res.set("Cache-Control", "no-store");
-    res.json(cards || []);
-  } catch (e) {
-    res.status(500).json({ error: "mydex_failed", message: e.message });
-  }
-});
-
 
 /* ================= MENU /START ================= */
 function sendStartMenu(chatId, userId) {
-  const isAdm = isAdmin(userId);
-  const title =
-    "🌾 *HARVESTDEX*\n" +
-    "_Le Dex communautaire._\n\n" +
-    "• Cartes • Raretés • Saisons\n" +
-    "• Ajoute des fiches à *Mon Dex* ⭐\n";
+  const isA = isAdmin(userId);
+  bot
+    .sendPhoto(chatId, START_IMAGE_URL, {
+      caption:
+        "🌾 *HARVESTDEX*
+" +
+        "_Saisons • Raretés • Collection_
 
-  const keyboard = [
-    [{ text: "📘 Ouvrir le Dex", web_app: { url: WEBAPP_URL } }],
-    [{ text: "⭐ Mon Dex", web_app: { url: WEBAPP_URL + "#mydex" } }],
-    [{ text: "ℹ️ Informations", callback_data: "menu_info" }],
-    [{ text: "🤝 Nous soutenir", callback_data: "menu_support" }],
-  ];
-  if (isAdm) keyboard.push([{ text: "🧰 Admin", callback_data: "menu_admin" }]);
-
-  if (START_IMAGE_URL) {
-    return bot.sendPhoto(chatId, START_IMAGE_URL, {
-      caption: title,
+" +
+        "➡️ Ouvre le Dex, ajoute des fiches à *Mon Dex* et collectionne 🔥",
       parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: keyboard },
+    })
+    .then(() => {
+      const rows = [
+        [{ text: "📘 Ouvrir le Dex", web_app: { url: WEBAPP_URL } }],
+        [{ text: "⭐ Mon Dex", web_app: { url: WEBAPP_URL + "#mydex" } }],
+        [{ text: "👤 Mon Profil", web_app: { url: WEBAPP_URL + "#profile" } }],
+        [{ text: "ℹ️ Informations", callback_data: "menu_info" }],
+        [{ text: "🤝 Nous soutenir", callback_data: "menu_support" }],
+      ];
+      if (isA) rows.push([{ text: "🧰 Admin", callback_data: "menu_admin" }]);
+
+      return bot.sendMessage(chatId, "Choisis une section 👇", {
+        reply_markup: { inline_keyboard: rows },
+      });
+    })
+    .catch(() => {
+      const rows = [
+        [{ text: "📘 Ouvrir le Dex", web_app: { url: WEBAPP_URL } }],
+        [{ text: "⭐ Mon Dex", web_app: { url: WEBAPP_URL + "#mydex" } }],
+        [{ text: "👤 Mon Profil", web_app: { url: WEBAPP_URL + "#profile" } }],
+        [{ text: "ℹ️ Informations", callback_data: "menu_info" }],
+        [{ text: "🤝 Nous soutenir", callback_data: "menu_support" }],
+      ];
+      if (isA) rows.push([{ text: "🧰 Admin", callback_data: "menu_admin" }]);
+
+      bot.sendMessage(chatId, "🌾 HarvestDex
+
+Choisis une section 👇", {
+        reply_markup: { inline_keyboard: rows },
+      });
     });
-  }
-  return bot.sendMessage(chatId, title, {
+}
+
+function sendInfoMenu(chatId) {
+  bot
+    .sendPhoto(chatId, INFO_IMAGE_URL, {
+      caption:
+        "ℹ️ *Informations — HarvestDex*
+
+" +
+        "• *C’est quoi ?* Un Dex communautaire de fiches.
+" +
+        "• *Saisons* : tu classes tes cartes par année (ex: 25-26).
+" +
+        "• *Raretés* : COMMON → RARE → EPIC → LEGENDARY → MYTHIC.
+" +
+        "• *Mon Dex* : chaque utilisateur peut ajouter ses fiches favorites.
+
+" +
+        "📩 Contact : écris-nous via le bouton partenaires.",
+      parse_mode: "Markdown",
+    })
+    .then(() => {
+      bot.sendMessage(chatId, "Menu informations 👇", {
+        reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_start" }]] },
+      });
+    })
+    .catch(() => {
+      bot.sendMessage(chatId,
+        "ℹ️ HarvestDex
+
+Un Dex communautaire : saisons, raretés, et Mon Dex perso.",
+        { reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_start" }]] } }
+      );
+    });
+}
+
+function sendSupportMenu(chatId) {
+  bot.sendMessage(chatId, "🤝 *Nous soutenir*", {
     parse_mode: "Markdown",
-    reply_markup: { inline_keyboard: keyboard },
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "📣 Nous suivre", url: "https://t.me/TON_LIEN" }],
+        [{ text: "🎮 Jouer", callback_data: "menu_games" }],
+        [{ text: "💛 Faire un don", url: "https://t.me/TON_LIEN" }],
+        [{ text: "🤝 Nos partenaires", callback_data: "menu_partners" }],
+        [{ text: "⬅️ Retour", callback_data: "menu_start" }],
+      ],
+    },
   });
+}
+
+function sendGamesMenu(chatId) {
+  bot.sendMessage(chatId, "🎮 *Jeux*", {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "🏍️ Moto", url: "https://example.com/moto" }],
+        [{ text: "🏎️ Drift", url: "https://example.com/drift" }],
+        [{ text: "⬅️ Retour", callback_data: "menu_support" }],
+      ],
+    },
+  });
+}
+
+function sendPartnersMenu(chatId) {
+  bot.sendMessage(chatId,
+    "🤝 *Nos partenaires*
+
+Aucun partenaire pour le moment.
+Veuillez nous contacter.",
+    {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_support" }]] },
+    }
+  );
+}
+
+function sendAdminMenu(chatId) {
+  bot.sendMessage(chatId, "🧰 *Admin*", {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "📜 Voir commandes", callback_data: "menu_commands" }],
+        [{ text: "📊 /stat", callback_data: "menu_stat" }],
+        [{ text: "⬅️ Retour", callback_data: "menu_start" }],
+      ],
+    },
+  });
+}
+
+function sendCommands(chatId) {
+  const txt =
+    "🧰 *Commandes Admin*
+
+" +
+    "• /commands — affiche ce menu
+" +
+    "• /myid — voir ton Telegram ID
+" +
+    "• /dbtest — test DB
+" +
+    "• /list — liste des fiches
+" +
+    "• /rare <id> [titre] — mettre en avant
+" +
+    "• /unrare — enlever mise en avant
+" +
+    "• /del <id> — supprimer une fiche
+" +
+    "• /edit <id> <champ> <valeur> — modifier une fiche
+" +
+    "• /stat — stats 7 jours
+";
+  bot.sendMessage(chatId, txt, { parse_mode: "Markdown" });
 }
 
 bot.onText(/\/start/, (msg) => sendStartMenu(msg.chat.id, msg.from?.id));
 
-bot.onText(/\/commands/, (msg) => {
-  if (!isAdmin(msg.from?.id)) return bot.sendMessage(msg.chat.id, "⛔ Pas autorisé.");
-  return bot.sendMessage(msg.chat.id, "🧰 Admin commands: /addform /seasonlist /subcatlist /stat /list /dbtest");
-});
+bot.onText(/\/start/, (msg) => sendStartMenu(msg.chat.id));
 
 /* ================= CALLBACKS MENU ================= */
 bot.on("callback_query", async (query) => {
+  const data = query?.data;
+
+  // Menus
+  if (data === "menu_start") { sendStartMenu(chatId, query?.from?.id); return; }
+  if (data === "menu_info") { sendInfoMenu(chatId); return; }
+  if (data === "menu_support") { sendSupportMenu(chatId); return; }
+  if (data === "menu_games") { sendGamesMenu(chatId); return; }
+  if (data === "menu_partners") { sendPartnersMenu(chatId); return; }
+  if (data === "menu_admin") {
+    if (!isAdmin(query?.from?.id)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+    sendAdminMenu(chatId);
+    return;
+  }
+  if (data === "menu_commands") {
+    if (!isAdmin(query?.from?.id)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+    sendCommands(chatId);
+    return;
+  }
+  if (data === "menu_stat") {
+    if (!isAdmin(query?.from?.id)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+    // simulate /stat
+    bot.emit("text", { chat: { id: chatId }, from: query.from, text: "/stat" });
+    return;
+  }
+
+
   const chatId = query?.message?.chat?.id;
-  const userId = query?.from?.id;
   if (!chatId) return;
 
-  try { await bot.answerCallbackQuery(query.id); } catch {}
+  try {
+    await bot.answerCallbackQuery(query.id);
+  } catch {}
 
-  if (query.data === "menu_back") {
-    return sendStartMenu(chatId, userId);
-  }
-
-  if (query.data === "menu_info") {
-    const txt =
-      "ℹ️ *Informations*\n\n" +
-      "HarvestDex = un Pokédex de cartes (Hash / Weed / Extraction / WPFF).\n\n" +
-      "*Comment ça marche ?*\n" +
-      "• Ouvre le Dex\n" +
-      "• Clique une fiche\n" +
-      "• Ajoute-la en ⭐ pour construire *Mon Dex*\n\n" +
-      "*Saisons* : 25-26, 26-27, 27-28...\n" +
-      "*Raretés* : COMMON / RARE / EPIC / LEGENDARY / MYTHIC\n\n" +
-      "Contact : via Telegram (bouton partenaires).\n";
-    return bot.sendMessage(chatId, txt, {
+  if (query.data === "info") {
+    return bot.sendPhoto(chatId, "https://postimg.cc/3yKwCXyp", {
+      caption:
+        "ℹ️ *Informations PokéTerps*\n\n" +
+        "🌿 Projet éducatif sur le THC & les terpènes\n\n" +
+        "📌 Catégories:\n" +
+        "• Hash / Extraction / WPFF → microns (120u/90u/73u/45u)\n" +
+        "• Weed → indica / sativa / hybrid\n\n" +
+        "_Aucune vente – information uniquement_",
       parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_back" }]] },
+      reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "back" }]] },
     });
   }
 
-  if (query.data === "menu_support") {
-    return bot.sendMessage(chatId, "🤝 *Nous soutenir*", {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "📣 Nous suivre", url: SUPPORT_FOLLOW_URL }],
-          [{ text: "🎮 Jouer", callback_data: "menu_games" }],
-          [{ text: "💛 Faire un don", url: SUPPORT_DONATE_URL }],
-          [{ text: "🤝 Nos partenaires", callback_data: "menu_partners" }],
-          [{ text: "⬅️ Retour", callback_data: "menu_back" }],
-        ],
-      },
-    });
-  }
-
-  if (query.data === "menu_games") {
-    return bot.sendMessage(chatId, "🎮 *Jeux*", {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🏍️ Moto", url: GAME_MOTO_URL }],
-          [{ text: "🏎️ Drift", url: GAME_DRIFT_URL }],
-          [{ text: "⬅️ Retour", callback_data: "menu_support" }],
-        ],
-      },
-    });
-  }
-
-  if (query.data === "menu_partners") {
-    return bot.sendMessage(chatId,
-      "🤝 *Nos partenaires*\n\nAucun partenaire pour le moment.\nVeuillez nous contacter.",
-      {
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_support" }]] },
-      }
-    );
-  }
-
-  if (query.data === "menu_admin") {
-    if (!isAdmin(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    const txt =
-      "🧰 *Admin*\n\n" +
-      "• /commands — liste des commandes\n" +
-      "• /addform — ajouter une fiche\n" +
-      "• /seasonlist /subcatlist ...\n" +
-      "• /stat\n";
-    return bot.sendMessage(chatId, txt, {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_back" }]] },
-    });
-  }
+  if (query.data === "back") return sendStartMenu(chatId);
+  if (query.data === "reviews") return bot.sendMessage(chatId, "⭐ Reviews en préparation...");
 });
+
 /* ================== COMMANDES ADMIN ================== */
 bot.onText(/^\/myid$/, (msg) => bot.sendMessage(msg.chat.id, `Ton chat_id = ${msg.chat.id}`));
 

@@ -396,35 +396,25 @@ Ici tu verras la fiche complète (terpènes, arômes, effets, conseils).
       document.getElementById("year").textContent = new Date().getFullYear();
     </script>
   
-    <!-- Bottom Nav -->
-    <nav id="bottomNav" class="bottom-nav">
-      <button id="navDex" class="bn-item active" type="button">
-        <span class="bn-ico">📘</span><span class="bn-txt">Dex</span>
-      </button>
-      <button id="navMyDex" class="bn-item" type="button">
-        <span class="bn-ico">⭐</span><span class="bn-txt">Mon Dex</span>
-      </button>
-      <button id="navProfile" class="bn-item" type="button">
-        <span class="bn-ico">👤</span><span class="bn-txt">Profil</span>
-      </button>
-    </nav>
+    <!-- Bottom Bar -->
+    <div id="bottomBar" class="bottom-bar">
+      <button id="navDex" class="bb-btn active">📘<span>Dex</span></button>
+      <button id="navMyDex" class="bb-btn">⭐<span>Mon Dex</span></button>
+      <button id="navProfile" class="bb-btn">👤<span>Profil</span></button>
+    </div>
 
-    <!-- Profile Sheet -->
-    <div id="profileSheet" class="profile-sheet" style="display:none;">
-      <div class="profile-top">
-        <div class="profile-title">👤 Mon Profil</div>
-        <button id="profileClose" class="btn btn-sm btn-outline-light">Fermer</button>
-      </div>
-      <div class="profile-body">
-        <div id="profileUser" class="profile-user">—</div>
-        <div class="profile-stats">
-          <div class="profile-stat"><span>Cartes dans Mon Dex</span><b id="profileCount">0</b></div>
+    <!-- Profile Modal -->
+    <div id="profileModal" class="profile-modal" style="display:none;">
+      <div class="profile-card">
+        <div class="profile-head">
+          <div class="profile-title">👤 Mon Profil</div>
+          <button id="closeProfile" class="btn btn-sm btn-outline-light">✕</button>
         </div>
-        <div class="profile-note text-muted mt-2" style="font-size:.9rem;">
-          Ouvre l’app depuis Telegram pour lier automatiquement ton Dex.
+        <div id="profileBody" class="profile-body">
+          <div class="text-muted">Chargement…</div>
         </div>
       </div>
     </div>
 
-  </body>
+</body>
 </html>

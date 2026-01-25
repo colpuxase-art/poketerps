@@ -11117,80 +11117,49 @@ footer.bg-black {
   backdrop-filter: blur(12px);
 }
 
-
-
-/* ===== HarvestDex Bottom Nav (Coquette) ===== */
-.bottom-nav{
-  position:fixed;
-  left:0; right:0; bottom:0;
+/* ===== HarvestDex Bottom Bar ===== */
+.bottom-bar{
+  position:fixed;left:0;right:0;bottom:0;
+  display:flex;gap:8px;justify-content:space-around;
+  padding:10px 10px env(safe-area-inset-bottom);
+  background:rgba(0,0,0,.55);
+  backdrop-filter: blur(10px);
+  border-top:1px solid rgba(255,255,255,.10);
   z-index:9999;
-  display:flex;
-  gap:8px;
-  padding:10px 12px;
-  backdrop-filter: blur(14px);
-  background: rgba(10,12,22,.72);
-  border-top: 1px solid rgba(255,255,255,.10);
 }
-.bn-item{
+.bb-btn{
   flex:1;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:8px;
-  padding:10px 10px;
+  display:flex;align-items:center;justify-content:center;gap:6px;
   border-radius:14px;
-  border:1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.06);
-  color:#e8eaf0;
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.06);
+  color:#fff;
+  padding:10px 6px;
   font-weight:800;
 }
-.bn-item.active{
-  background: linear-gradient(90deg, rgba(245,185,66,.95), rgba(45,212,191,.85));
-  color:#10131f;
-  border-color: rgba(245,185,66,.45);
+.bb-btn span{font-size:12px;opacity:.9}
+.bb-btn.active{
+  background:linear-gradient(90deg, rgba(245,185,66,1), rgba(45,212,191,1));
+  color:#111;
 }
-.bn-ico{font-size:16px}
-.bn-txt{font-size:12px}
-
-/* add safe padding so list doesn't hide behind nav */
-body{ padding-bottom: 80px; }
-
-/* Profile sheet */
-.profile-sheet{
-  position:fixed;
-  inset:0;
+.profile-modal{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.60);
+  backdrop-filter: blur(8px);
   z-index:10000;
-  background: rgba(0,0,0,.55);
-  backdrop-filter: blur(10px);
-}
-.profile-top{
   display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:14px 14px;
-  border-bottom: 1px solid rgba(255,255,255,.10);
-  background: rgba(10,12,22,.80);
+  align-items:flex-end;
 }
-.profile-title{font-weight:900}
-.profile-body{
+.profile-card{
+  width:100%;
+  border-top-left-radius:18px;
+  border-top-right-radius:18px;
+  background:rgba(10,12,20,.96);
+  border:1px solid rgba(255,255,255,.10);
   padding:14px;
+  min-height:220px;
 }
-.profile-user{
-  padding:12px 12px;
-  border:1px solid rgba(255,255,255,.10);
-  border-radius:14px;
-  background: rgba(255,255,255,.06);
-}
-.profile-stats{
-  margin-top:12px;
-  border:1px solid rgba(255,255,255,.10);
-  border-radius:14px;
-  overflow:hidden;
-  background: rgba(255,255,255,.04);
-}
-.profile-stat{
-  display:flex;
-  justify-content:space-between;
-  padding:12px 12px;
-}
-.profile-stat span{color:rgba(232,234,240,.72)}
+.profile-head{display:flex;justify-content:space-between;align-items:center}
+.profile-title{font-size:16px;font-weight:900}
+.profile-body{margin-top:10px;color:#fff}
+body{padding-bottom:72px;}
