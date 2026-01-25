@@ -205,88 +205,75 @@ function sendStartMenu(chatId, userId) {
 }
 
 function sendInfoMenu(chatId) {
-  bot
-    .sendPhoto(chatId, INFO_IMAGE_URL, {
-      caption:
-        'ℹ️ *Informations — HarvestDex*
+  bot.sendPhoto(chatId, INFO_IMAGE_URL, {
+    caption: `ℹ️ *Informations — HarvestDex*
 
-' +
-        '• *C’est quoi ?* Un Dex communautaire de fiches.
-' +
-        '• *Saisons* : tu classes tes cartes par année (ex: 25-26).
-' +
-        '• *Raretés* : COMMON → RARE → EPIC → LEGENDARY → MYTHIC.
-' +
-        '• *Mon Dex* : chaque utilisateur peut ajouter ses fiches favorites.
+• *C’est quoi ?* Un Dex communautaire de fiches.
+• *Saisons* : tu classes tes cartes par année (ex: 25-26).
+• *Raretés* : COMMON → RARE → EPIC → LEGENDARY → MYTHIC.
+• *Mon Dex* : chaque utilisateur peut ajouter ses fiches favorites.
 
-' +
-        '📩 Contact : écris-nous via le bouton partenaires.',
-      parse_mode: 'Markdown',
-    })
-    .then(() => {
-      bot.sendMessage(chatId, 'Menu informations 👇', {
-        reply_markup: { inline_keyboard: [[{ text: '⬅️ Retour`, callback_data: `menu_start' }]] },
-      });
-    })
-    .catch(() => {
-      bot.sendMessage(chatId,
-        'ℹ️ HarvestDex
-
-Un Dex communautaire : saisons, raretés, et Mon Dex perso.',
-        { reply_markup: { inline_keyboard: [[{ text: '⬅️ Retour`, callback_data: `menu_start' }]] } }
-      );
+📩 Contact : clique sur *Nos partenaires* puis contacte-nous.`,
+    parse_mode: "Markdown",
+  }).then(() => {
+    bot.sendMessage(chatId, "Menu informations 👇", {
+      reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_start" }]] },
     });
+  }).catch(() => {
+    bot.sendMessage(chatId, "ℹ️ HarvestDex
+
+Un Dex communautaire : saisons, raretés, et Mon Dex perso.", {
+      reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_start" }]] },
+    });
+  });
 }
 
 function sendSupportMenu(chatId) {
-  bot.sendMessage(chatId, '🤝 *Nous soutenir*', {
-    parse_mode: 'Markdown',
+  bot.sendMessage(chatId, "🤝 *Nous soutenir*", {
+    parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [{ text: '📣 Nous suivre`, url: `https://t.me/TON_LIEN' }],
-        [{ text: '🎮 Jouer`, callback_data: `menu_games' }],
-        [{ text: '💛 Faire un don`, url: `https://t.me/TON_LIEN' }],
-        [{ text: '🤝 Nos partenaires`, callback_data: `menu_partners' }],
-        [{ text: '⬅️ Retour`, callback_data: `menu_start' }],
+        [{ text: "📣 Nous suivre", url: "https://t.me/TON_LIEN" }],
+        [{ text: "🎮 Jouer", callback_data: "menu_games" }],
+        [{ text: "💛 Faire un don", url: "https://t.me/TON_LIEN" }],
+        [{ text: "🤝 Nos partenaires", callback_data: "menu_partners" }],
+        [{ text: "⬅️ Retour", callback_data: "menu_start" }],
       ],
     },
   });
 }
 
 function sendGamesMenu(chatId) {
-  bot.sendMessage(chatId, '🎮 *Jeux*', {
-    parse_mode: 'Markdown',
+  bot.sendMessage(chatId, "🎮 *Jeux*", {
+    parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [{ text: '🏍️ Moto`, url: `https://example.com/moto' }],
-        [{ text: '🏎️ Drift`, url: `https://example.com/drift' }],
-        [{ text: '⬅️ Retour`, callback_data: `menu_support' }],
+        [{ text: "🏍️ Moto", url: "https://example.com/moto" }],
+        [{ text: "🏎️ Drift", url: "https://example.com/drift" }],
+        [{ text: "⬅️ Retour", callback_data: "menu_support" }],
       ],
     },
   });
 }
 
 function sendPartnersMenu(chatId) {
-  bot.sendMessage(chatId,
-    '🤝 *Nos partenaires*
+  bot.sendMessage(chatId, "🤝 *Nos partenaires*
 
 Aucun partenaire pour le moment.
-Veuillez nous contacter.',
-    {
-      parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: [[{ text: '⬅️ Retour`, callback_data: `menu_support' }]] },
-    }
-  );
+Veuillez nous contacter.", {
+    parse_mode: "Markdown",
+    reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_support" }]] },
+  });
 }
 
 function sendAdminMenu(chatId) {
-  bot.sendMessage(chatId, '🧰 *Admin*', {
-    parse_mode: 'Markdown',
+  bot.sendMessage(chatId, "🧰 *Admin*", {
+    parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [{ text: '📜 Voir commandes`, callback_data: `menu_commands' }],
-        [{ text: '📊 /stat`, callback_data: `menu_stat' }],
-        [{ text: '⬅️ Retour`, callback_data: `menu_start' }],
+        [{ text: "📜 Voir commandes", callback_data: "menu_commands" }],
+        [{ text: "📊 Statistiques", callback_data: "menu_stat" }],
+        [{ text: "⬅️ Retour", callback_data: "menu_start" }],
       ],
     },
   });
@@ -294,28 +281,24 @@ function sendAdminMenu(chatId) {
 
 function sendCommands(chatId) {
   const txt =
-    '🧰 *Commandes Admin*
+    "🧰 *Commandes Admin*
 
-' +
-    '• /commands — affiche ce menu
-' +
-    '• /myid — voir ton Telegram ID
-' +
-    '• /dbtest — test DB
-' +
-    '• /list — liste des fiches
-' +
-    '• /rare <id> [titre] — mettre en avant
-' +
-    '• /unrare — enlever mise en avant
-' +
-    '• /del <id> — supprimer une fiche
-' +
-    '• /edit <id> <champ> <valeur> — modifier une fiche
-' +
-    '• /stat — stats 7 jours
-';
-  bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
+" +
+    "• /commands — affiche ce menu
+" +
+    "• /myid — voir ton Telegram ID
+" +
+    "• /dbtest — test DB
+" +
+    "• /list — liste des fiches
+" +
+    "• /del <id> — supprimer une fiche
+" +
+    "• /edit <id> <champ> <valeur> — modifier une fiche
+" +
+    "• /stat — stats 7 jours
+";
+  bot.sendMessage(chatId, txt, { parse_mode: "Markdown" });
 }
 
 bot.onText(/\/start/, (msg) => sendStartMenu(msg.chat.id, msg.from?.id));
@@ -367,7 +350,7 @@ bot.on('callback_query', async (query) => {
         '• Weed → indica / sativa / hybrid\n\n' +
         '_Aucune vente – information uniquement_',
       parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: [[{ text: '⬅️ Retour`, callback_data: `back' }]] },
+      reply_markup: { inline_keyboard: [[{ text: '⬅️ Retour, callback_data: `back' }]] },
     });
   }
 
