@@ -242,9 +242,9 @@ Collectionne tes fiches, ajoute-les à *Mon Dex* et explore les catégories 🔥
     parse_mode: "Markdown",
     reply_markup: { inline_keyboard: keyboard },
   }).catch(() => {
-    bot.sendMessage(chatId, "🧬 PokéTerps
+    bot.sendMessage(chatId, `🧬 PokéTerps
 
-Choisis une section 👇", {
+Choisis une section 👇`, {
       reply_markup: { inline_keyboard: keyboard },
     });
   });
@@ -499,7 +499,7 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
 
       // pas de micron pour weed
       if (String(card.type).toLowerCase() === "weed") {
-        return bot.sendMessage(chatId, "❌ Weed n’a pas de micron. Modifie weed_kind.");
+        return bot.sendMessage(chatId, "❌ Weed n'a pas de micron. Modifie weed_kind.");
       }
 
       patch.micron = v;
@@ -647,7 +647,7 @@ bot.onText(/^\/addform$/, (msg) => {
   addWizard.set(chatId, { step: "name", data: {} });
   bot.sendMessage(
     chatId,
-    "📝 *Ajout d’une fiche* (formulaire)\n\n" +
+    "📝 *Ajout d'une fiche* (formulaire)\n\n" +
       "1/10 — Envoie le *nom*.\nEx: `Static Hash Premium`",
     { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] } }
   );
@@ -935,7 +935,7 @@ bot.on("callback_query", async (query) => {
 
       const card = await dbGetCard(id);
       if (!card) return bot.sendMessage(chatId, "❌ Fiche introuvable.");
-      if (String(card.type).toLowerCase() === "weed") return bot.sendMessage(chatId, "❌ Weed n’a pas de micron.");
+      if (String(card.type).toLowerCase() === "weed") return bot.sendMessage(chatId, "❌ Weed n'a pas de micron.");
 
       await dbUpdateCard(id, { micron: m });
       return bot.sendMessage(chatId, `✅ Micron mis à jour: #${id} → ${m || "Aucun"}`);
@@ -1049,7 +1049,7 @@ bot.on("message", async (msg) => {
       if (["terpenes", "aroma", "effects"].includes(field)) {
         patch[field] = val ? csvToArr(val) : [];
       } else if (field === "micron") {
-        if (String(card.type).toLowerCase() === "weed") throw new Error("Weed n’a pas de micron.");
+        if (String(card.type).toLowerCase() === "weed") throw new Error("Weed n'a pas de micron.");
         if (val && !isMicron(val)) throw new Error("micron invalide");
         patch.micron = val ? val.toLowerCase() : null;
       } else if (field === "weed_kind") {
