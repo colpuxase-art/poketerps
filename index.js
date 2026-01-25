@@ -417,30 +417,28 @@ bot.on("callback_query", async (query) => {
 
   // Admin sous-menus
   if (data === "admin_help") {
-    if (!isAdmin(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(
-      chatId,
-      "👑 *Commandes Admin PokéTerps*\n\n" +
-        "✅ /dbtest *(test Supabase)*\n" +
-        "✅ /list [hash|weed|extraction|wpff|120u|90u|73u|45u|indica|sativa|hybrid]\n" +
-        "✅ /edit id field value\n" +
-        "✅ /del id\n\n" +
-        "✨ *Rare du moment*\n" +
-        "✅ /rare id (titre optionnel)\n" +
-        "✅ /unrare\n" +
-        "✅ /rareinfo\n\n" +
-        "📊 *Stats*\n" +
-        "✅ /stat\n\n" +
-        "*fields /edit:* name,type,micron,weed_kind,thc,description,img,advice,terpenes,aroma,effects",
-      { parse_mode: "Markdown" }
-    );
-  }
+  if (!isAdmin(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
 
-  if (data === "admin_stat") {
-    if (!isAdmin(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, "📊 Utilise la commande : /stat");
-  }
-});
+  const text =
+    "👑 <b>Commandes Admin PokéTerps</b>\n\n" +
+    "✅ /dbtest <i>(test Supabase)</i>\n" +
+    "✅ /list [hash|weed|extraction|wpff|120u|90u|73u|45u|indica|sativa|hybrid]\n" +
+    "✅ /addform <i>(ajout guidé)</i>\n" +
+    "✅ /editform <i>(modification guidée)</i>\n" +
+    "✅ /delform <i>(suppression guidée)</i>\n" +
+    "✅ /edit id field value\n" +
+    "✅ /del id\n\n" +
+    "✨ <b>Rare du moment</b>\n" +
+    "✅ /rare id (titre optionnel)\n" +
+    "✅ /unrare\n" +
+    "✅ /rareinfo\n\n" +
+    "📊 <b>Stats</b>\n" +
+    "✅ /stat\n\n" +
+    "<b>Fields /edit :</b>\n" +
+    "name, type, micron, weed_kind, thc, description, img, advice, terpenes, aroma, effects";
+
+  return bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+}
 
 /* ================== COMMANDES ================== */
 bot.onText(/^\/myid$/, (msg) =>
