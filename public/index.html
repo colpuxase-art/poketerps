@@ -396,23 +396,35 @@ Ici tu verras la fiche complète (terpènes, arômes, effets, conseils).
       document.getElementById("year").textContent = new Date().getFullYear();
     </script>
   
-    <!-- BOTTOM NAV -->
-    <div id="bottomNav" class="bottom-nav">
-      <button id="navDex" class="bn-item active">📘 Dex</button>
-      <button id="navMyDex" class="bn-item">⭐ Mon Dex</button>
-      <button id="navProfile" class="bn-item">👤 Profil</button>
-    </div>
+    <!-- Bottom Nav -->
+    <nav id="bottomNav" class="bottom-nav">
+      <button id="navDex" class="bn-item active" type="button">
+        <span class="bn-ico">📘</span><span class="bn-txt">Dex</span>
+      </button>
+      <button id="navMyDex" class="bn-item" type="button">
+        <span class="bn-ico">⭐</span><span class="bn-txt">Mon Dex</span>
+      </button>
+      <button id="navProfile" class="bn-item" type="button">
+        <span class="bn-ico">👤</span><span class="bn-txt">Profil</span>
+      </button>
+    </nav>
 
-    <!-- PROFILE SHEET -->
-    <div id="profileSheet" class="profile-sheet hidden">
-      <div class="ps-card">
-        <div class="ps-head">
-          <div class="ps-title">👤 Mon Profil</div>
-          <button id="profileClose" class="ps-close">✕</button>
+    <!-- Profile Sheet -->
+    <div id="profileSheet" class="profile-sheet" style="display:none;">
+      <div class="profile-top">
+        <div class="profile-title">👤 Mon Profil</div>
+        <button id="profileClose" class="btn btn-sm btn-outline-light">Fermer</button>
+      </div>
+      <div class="profile-body">
+        <div id="profileUser" class="profile-user">—</div>
+        <div class="profile-stats">
+          <div class="profile-stat"><span>Cartes dans Mon Dex</span><b id="profileCount">0</b></div>
         </div>
-        <div id="profileBody" class="ps-body"></div>
+        <div class="profile-note text-muted mt-2" style="font-size:.9rem;">
+          Ouvre l’app depuis Telegram pour lier automatiquement ton Dex.
+        </div>
       </div>
     </div>
 
-</body>
+  </body>
 </html>

@@ -11118,69 +11118,79 @@ footer.bg-black {
 }
 
 
-/* ================== HarvestDex Bottom Nav + Profile ================== */
+
+/* ===== HarvestDex Bottom Nav (Coquette) ===== */
 .bottom-nav{
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
+  position:fixed;
+  left:0; right:0; bottom:0;
+  z-index:9999;
   display:flex;
-  gap:10px;
-  padding:10px;
-  border-radius:16px;
-  background: rgba(10,12,20,.78);
-  border: 1px solid rgba(255,255,255,.12);
-  backdrop-filter: blur(12px);
-  z-index: 9999;
+  gap:8px;
+  padding:10px 12px;
+  backdrop-filter: blur(14px);
+  background: rgba(10,12,22,.72);
+  border-top: 1px solid rgba(255,255,255,.10);
 }
 .bn-item{
   flex:1;
-  padding:10px 12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:10px 10px;
   border-radius:14px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.04);
-  color: rgba(255,255,255,.92);
-  font-weight: 700;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color:#e8eaf0;
+  font-weight:800;
 }
 .bn-item.active{
-  background: rgba(245,185,66,.18);
-  border-color: rgba(245,185,66,.55);
-  color: #f5b942;
+  background: linear-gradient(90deg, rgba(245,185,66,.95), rgba(45,212,191,.85));
+  color:#10131f;
+  border-color: rgba(245,185,66,.45);
 }
+.bn-ico{font-size:16px}
+.bn-txt{font-size:12px}
+
+/* add safe padding so list doesn't hide behind nav */
+body{ padding-bottom: 80px; }
 
 /* Profile sheet */
 .profile-sheet{
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.6);
-  display:flex;
-  align-items:flex-end;
-  justify-content:center;
-  padding: 16px;
-  z-index: 10000;
+  position:fixed;
+  inset:0;
+  z-index:10000;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(10px);
 }
-.profile-sheet.hidden{ display:none; }
-.ps-card{
-  width: 100%;
-  max-width: 520px;
-  border-radius: 22px;
-  background: rgba(12,14,20,.92);
-  border: 1px solid rgba(255,255,255,.12);
-  box-shadow: 0 24px 80px rgba(0,0,0,.55);
-}
-.ps-head{
+.profile-top{
   display:flex;
-  align-items:center;
   justify-content:space-between;
-  padding: 14px 16px;
+  align-items:center;
+  padding:14px 14px;
   border-bottom: 1px solid rgba(255,255,255,.10);
+  background: rgba(10,12,22,.80);
 }
-.ps-title{ font-weight: 900; letter-spacing: .2px; }
-.ps-close{
-  border:0;
+.profile-title{font-weight:900}
+.profile-body{
+  padding:14px;
+}
+.profile-user{
+  padding:12px 12px;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:14px;
   background: rgba(255,255,255,.06);
-  color: rgba(255,255,255,.9);
-  border-radius: 12px;
-  padding: 8px 10px;
 }
-.ps-body{ padding: 14px 16px; color: rgba(255,255,255,.85); }
+.profile-stats{
+  margin-top:12px;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:14px;
+  overflow:hidden;
+  background: rgba(255,255,255,.04);
+}
+.profile-stat{
+  display:flex;
+  justify-content:space-between;
+  padding:12px 12px;
+}
+.profile-stat span{color:rgba(232,234,240,.72)}

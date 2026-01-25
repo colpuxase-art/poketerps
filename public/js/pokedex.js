@@ -4,12 +4,10 @@
   if (tg) {
     tg.ready();
     tg.expand();
-
-  const TG_USER = tg?.initDataUnsafe?.user || null;
-  const TG_UID = TG_USER?.id ? Number(TG_USER.id) : null;
   }
 
-  /* ================= FALLBACK DATA (si API KO) ================= */
+  const DEFAULT_CARD_IMAGE_URL = "https://i.imgur.com/0HqWQvH.png";
+/* ================= FALLBACK DATA (si API KO) ================= */
   const fallbackPokedex = [
     {
       id: 101,
@@ -40,7 +38,13 @@
 
   const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
 
-  function cardDesc(c) {
+  
+  function rarityBadge(p){
+    const r = (p.rarity || "COMMON").toUpperCase();
+    return `<span class="badge bg-dark text-light me-1">${r}</span>`;
+  }
+
+function cardDesc(c) {
     return c.desc ?? c.description ?? c.profile ?? "—";
   }
 
@@ -84,6 +88,58 @@
   const favBtn = $("favBtn");
 
   const subChips = $("subChips");
+
+  const bottomNav = $("bottomNav");
+  const navDex = $("navDex");
+  const navMyDex = $("navMyDex");
+  const navProfile = $("navProfile");
+  const profileSheet = $("profileSheet");
+  const profileClose = $("profileClose");
+  const profileUser = $("profileUser");
+  const profileCount = $("profileCount");
+
+  function setBottomActive(which){
+    [navDex, navMyDex, navProfile].forEach((b)=> b && b.classList.remove("active"));
+    if (which === "dex") navDex?.classList.add("active");
+    if (which === "mydex") navMyDex?.classList.add("active");
+    if (which === "profile") navProfile?.classList.add("active");
+  }
+
+  function openProfile(){
+    if (!profileSheet) return;
+    setBottomActive("profile");
+    profileSheet.style.display = "block";
+    const u = tg?.initDataUnsafe?.user;
+    profileUser.textContent = u ? `@${u.username || ""} ${u.first_name || ""}`.trim() : "Hors Telegram (mode local)";
+    profileCount.textContent = String(favs.size || 0);
+  }
+  function closeProfile(){
+    if (!profileSheet) return;
+    profileSheet.style.display = "none";
+  }
+
+  navDex?.addEventListener("click", () => {
+    closeProfile();
+    setBottomActive("dex");
+    favOnly = false;
+    favToggle && (favToggle.checked = false);
+    renderList();
+  });
+  navMyDex?.addEventListener("click", () => {
+    closeProfile();
+    setBottomActive("mydex");
+    favOnly = true;
+    favToggle && (favToggle.checked = true);
+    renderList();
+  });
+  navProfile?.addEventListener("click", () => {
+    openProfile();
+  });
+  profileClose?.addEventListener("click", () => {
+    closeProfile();
+    setBottomActive(favOnly ? "mydex" : "dex");
+  });
+
 
   const pokeName = $("pokeName");
   const pokeId = $("pokeId");
@@ -172,53 +228,9 @@
   }
 
   /* ================= LOAD FROM API ================= */
-  let subcatMap = {};
-  async function loadSubcategories() {
-    try {
-      const res = await fetch("/api/subcategories", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      subcatMap = {};
-      (Array.isArray(data) ? data : []).forEach((s) => {
-        if (s && s.id != null) subcatMap[String(s.id)] = s.label || "";
-      });
-      // attach label to cards already loaded
-      if (Array.isArray(pokedex)) {
-        pokedex.forEach((c) => {
-          c.subcategory_label = c.subcategory_id != null ? (subcatMap[String(c.subcategory_id)] || "") : "";
-        });
-      }
-    } catch {
-      subcatMap = {};
-    }
-  }
-
-  async function loadFavsServer() {
-    if (!TG_UID) return null;
-    try {
-      const res = await fetch(`/api/mydex/${TG_UID}`, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      return new Set((Array.isArray(data) ? data : []).map((c) => String(c.id)));
-    } catch {
-      return null;
-    }
-  }
-
-  async function toggleFavServer(cardId) {
-    if (!TG_UID) return null;
-    const res = await fetch("/api/favorite", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: TG_UID, card_id: Number(cardId) }),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  }
-
   async function loadCards() {
     try {
-      const res = await fetch("/api/cards", { cache: "no-store" });
+      const res = await fetch(`${window.location.origin}/api/cards`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
@@ -226,11 +238,12 @@
         id: Number(c.id) || c.id,
         name: c.name || "Sans nom",
         type: c.type || "hash",
+        subcategory_id: c.subcategory_id ?? null,
         micron: c.micron ?? null,
         weed_kind: c.weed_kind ?? null,
         thc: c.thc || "—",
         desc: cardDesc(c),
-        img: c.img || "https://i.imgur.com/0HqWQvH.png",
+        img: c.img || DEFAULT_CARD_IMAGE_URL,
         terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
         aroma: Array.isArray(c.aroma) ? c.aroma : [],
         effects: Array.isArray(c.effects) ? c.effects : [],
@@ -246,7 +259,33 @@
     }
   }
 
-  async function loadFeatured() {
+  
+  /* ================= LOAD SUBCATEGORIES ================= */
+  async function loadSubcategories() {
+    try {
+      const res = await fetch(`${window.location.origin}/api/subcategories`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : [];
+      subcategoriesByType = { hash: [], weed: [], extraction: [], wpff: [] };
+      subLabelById = {};
+      for (const s of list) {
+        if (!s || !s.type || !s.id) continue;
+        subLabelById[String(s.id)] = s.label || "";
+        if (subcategoriesByType[s.type]) subcategoriesByType[s.type].push(s);
+      }
+      // sort by sort then label
+      for (const k of Object.keys(subcategoriesByType)) {
+        subcategoriesByType[k].sort((a,b)=> (a.sort??100)-(b.sort??100) || String(a.label).localeCompare(String(b.label)));
+      }
+    } catch (e) {
+      // keep empty; app still works
+      subcategoriesByType = { hash: [], weed: [], extraction: [], wpff: [] };
+      subLabelById = {};
+    }
+  }
+
+async function loadFeatured() {
     try {
       const res = await fetch("/api/featured", { cache: "no-store" });
       if (!res.ok) {
@@ -265,11 +304,12 @@
         id: Number(c.id) || c.id,
         name: c.name || "Sans nom",
         type: c.type || "hash",
+        subcategory_id: c.subcategory_id ?? null,
         micron: c.micron ?? null,
         weed_kind: c.weed_kind ?? null,
         thc: c.thc || "—",
         desc: cardDesc(c),
-        img: c.img || "https://i.imgur.com/0HqWQvH.png",
+        img: c.img || DEFAULT_CARD_IMAGE_URL,
         terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
         aroma: Array.isArray(c.aroma) ? c.aroma : [],
         effects: Array.isArray(c.effects) ? c.effects : [],
@@ -286,9 +326,8 @@
 
   function extraText(card) {
     const t = norm(card.type);
-    const sub = card.subcategory_label ? ` • ${card.subcategory_label}` : "";
-    if (t === "weed") return (card.weed_kind ? ` • ${weedKindLabel(norm(card.weed_kind))}` : "") + sub;
-    return (card.micron ? ` • ${norm(card.micron)}` : "") + sub;
+    if (t === "weed") return card.weed_kind ? ` • ${weedKindLabel(norm(card.weed_kind))}` : "";
+    return card.micron ? ` • ${norm(card.micron)}` : "";
   }
 
   /* ================= SPARKLES ================= */
@@ -372,35 +411,27 @@
 
     subChips.style.display = "flex";
 
-    let options = [];
-    if (activeType === "weed") {
-      options = [
-        { label: "Tous", value: "all" },
-        { label: "Indica", value: "indica" },
-        { label: "Sativa", value: "sativa" },
-        { label: "Hybrid", value: "hybrid" },
-      ];
-      if (activeSub !== "all" && !weedKindValues.includes(activeSub)) activeSub = "all";
-    } else {
-      options = [
-        { label: "Tous", value: "all" },
-        { label: "120u", value: "120u" },
-        { label: "90u", value: "90u" },
-        { label: "73u", value: "73u" },
-        { label: "45u", value: "45u" },
-      ];
-      if (activeSub !== "all" && !micronValues.includes(activeSub)) activeSub = "all";
-    }
+    const options = [{ label: "Tous", value: "all" }, ...(subcategoriesByType[activeType] || []).map((s) => ({
+      label: s.label,
+      value: String(s.id),
+    }))];
+
+    // ensure valid
+    const valid = new Set(options.map((o) => o.value));
+    if (!valid.has(String(activeSub))) activeSub = "all";
 
     options.forEach((opt) => {
-      const btn = chipBtn(opt.label, opt.value, activeSub === opt.value);
-      btn.addEventListener("click", () => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn btn-sm " + (opt.value === String(activeSub) ? "btn-outline-light chip active" : "btn-outline-light chip");
+      b.textContent = opt.label;
+      b.dataset.sub = opt.value;
+      b.addEventListener("click", () => {
         activeSub = opt.value;
         renderSubChips();
         renderList();
-        haptic("impact", "light");
       });
-      subChips.appendChild(btn);
+      subChips.appendChild(b);
     });
   }
 
@@ -532,9 +563,6 @@
       const line4 = `🧠 Effets (ressenti): ${formatList(p.effects)}`;
       const line5 = `⚠️ Conseils: ${p.advice || "—"}`;
       pokeDesc.textContent = [line1, "", line2, line3, line4, "", line5].join("\n");
-    // auto scroll to description for easy reading
-    try { pokeDesc?.scrollIntoView({ behavior: "smooth", block: "start" }); } catch {}
-
     }
 
     if (pokeImg) {
@@ -544,6 +572,11 @@
     if (placeholder) placeholder.style.display = "none";
 
     refreshFavBtn();
+ 
+    // Auto-scroll to description for easy reading
+    const pokeDesc = document.getElementById('pokeDesc');
+    if (pokeDesc) pokeDesc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
   }
 
   /* ================= EVENTS ================= */
@@ -581,41 +614,17 @@
     haptic("impact", "medium");
   });
 
-  favBtn?.addEventListener("click", async () => {
+  favBtn?.addEventListener("click", () => {
     if (!selected) return;
     const id = String(selected.id);
-
-    // Server sync if in Telegram
-    if (TG_UID) {
-      const r = await toggleFavServer(id);
-      if (r && r.favorited === false) {
-        favs.delete(id);
-        toast("Retiré de Mon Dex");
-      } else if (r && r.favorited === true) {
-        favs.add(id);
-        toast("Ajouté à Mon Dex ⭐");
-      } else {
-        toast("Erreur favoris");
-      }
+    if (favs.has(id)) {
+      favs.delete(id);
+      toast("Retiré des favoris");
     } else {
-      // local fallback
-      if (favs.has(id)) {
-        favs.delete(id);
-        toast("Retiré des favoris");
-      } else {
-        favs.add(id);
-        toast("Ajouté aux favoris ❤️");
-      }
-      saveFavs(favs);
+      favs.add(id);
+      toast("Ajouté aux favoris ❤️");
     }
-
-    refreshFavBtn();
-    renderList();
-    haptic("impact", "medium");
-  });
-
-  // keep local save for TG too (optional cache)
-  saveFavs(favs);
+    saveFavs(favs);
     refreshFavBtn();
     renderList();
     haptic("impact", "medium");
@@ -679,67 +688,16 @@
     await loadSubcategories();
     await loadFeatured();
 
-    // if telegram: replace local favs with server favs
-    const serverFavs = await loadFavsServer();
-    if (serverFavs) {
-      favs = serverFavs;
-      saveFavs(favs); // cache locally too
-      refreshFavBtn();
-    }
-
     renderSubChips();
     renderList();
 
-    // bottom nav
-    const navDex = document.getElementById("navDex");
-    const navMyDex = document.getElementById("navMyDex");
-    const navProfile = document.getElementById("navProfile");
-    const profileSheet = document.getElementById("profileSheet");
-    const profileClose = document.getElementById("profileClose");
-    const profileBody = document.getElementById("profileBody");
-
-    function setActiveNav(which) {
-      [navDex, navMyDex, navProfile].forEach((b) => b?.classList.remove("active"));
-      if (which === "dex") navDex?.classList.add("active");
-      if (which === "mydex") navMyDex?.classList.add("active");
-      if (which === "profile") navProfile?.classList.add("active");
-    }
-
-    navDex?.addEventListener("click", () => {
-      showFavOnly = false;
-      favToggle?.classList.remove("active");
-      setActiveNav("dex");
-      renderList();
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    });
-
-    navMyDex?.addEventListener("click", () => {
-      showFavOnly = true;
-      favToggle?.classList.add("active");
-      setActiveNav("mydex");
-      renderList();
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    });
-
-    navProfile?.addEventListener("click", () => {
-      setActiveNav("profile");
-      if (!profileSheet || !profileBody) return;
-      const name = TG_USER ? (TG_USER.first_name || TG_USER.username || "Utilisateur") : "Invité";
-      profileBody.innerHTML =
-        `<div style="font-weight:900; font-size:18px; margin-bottom:6px;">${name}</div>` +
-        `<div style="opacity:.85; margin-bottom:10px;">Fiches dans Mon Dex : <b>${favs.size}</b></div>` +
-        (TG_UID ? `<div style="opacity:.65">Telegram ID: ${TG_UID}</div>` : `<div style="opacity:.65">Ouvre dans Telegram pour sauvegarder en ligne.</div>`);
-      profileSheet.classList.remove("hidden");
-    });
-
-    profileClose?.addEventListener("click", () => profileSheet?.classList.add("hidden"));
-    profileSheet?.addEventListener("click", (e) => {
-      if (e.target === profileSheet) profileSheet.classList.add("hidden");
-    });
-
-    // Deep link from /start: #mydex
-    if (location.hash === "#mydex") navMyDex?.click();
-
     setLoading(false);
+
+    // si featured existe, petit “wow”
+    if (featured) {
+      toast("✨ Shiny du moment chargé");
+    }
   })();
-})();
+})();let subcategoriesByType = { hash: [], weed: [], extraction: [], wpff: [] };
+let subLabelById = {};
+
