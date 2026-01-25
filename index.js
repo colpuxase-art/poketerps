@@ -187,37 +187,33 @@ app.get("/api/featured", async (req, res) => {
 });
 
 /* ================= MENU /START ================= */
-function sendStartMenu(chatId) {
-  bot
-    .sendPhoto(chatId, "https://postimg.cc/hXVJ042F", {
-      caption: "🧬 *Bienvenue dans PokéTerps*",
-      parse_mode: "Markdown",
-    })
-    .then(() => {
-      bot.sendMessage(chatId, "Choisis une section 👇", {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📘 Pokédex", web_app: { url: "https://poketerps.onrender.com" } }],
-            [{ text: "ℹ️ Informations", callback_data: "info" }],
-            [{ text: "⭐ Reviews", callback_data: "reviews" }],
-            [{ text: "❤️ Soutenir", url: "https://t.me/TON_LIEN" }],
-          ],
-        },
-      });
-    })
-    .catch(() => {
-      bot.sendMessage(chatId, "🧬 Bienvenue dans PokéTerps\n\nChoisis une section 👇", {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📘 Pokédex", web_app: { url: "https://poketerps.onrender.com" } }],
-            [{ text: "ℹ️ Informations", callback_data: "info" }],
-            [{ text: "⭐ Reviews", callback_data: "reviews" }],
-            [{ text: "❤️ Soutenir", url: "https://t.me/TON_LIEN" }],
-          ],
-        },
-      });
+function sendStartMenu(chatId, userId) {
+  const isA = typeof isAdmin === "function" ? isAdmin(userId) : false;
+
+  const keyboard = [
+    [{ text: "📘 Ouvrir le Dex", web_app: { url: WEBAPP_URL } }],
+    [{ text: "⭐ Mon Dex", web_app: { url: WEBAPP_URL + "#mydex" } }],
+    [{ text: "👤 Mon Profil", web_app: { url: WEBAPP_URL + "#profile" } }],
+    [{ text: "ℹ️ Informations", callback_data: "menu_info" }],
+    [{ text: "🤝 Nous soutenir", callback_data: "menu_support" }]
+  ];
+  if (isA) keyboard.push([{ text: "🧰 Admin", callback_data: "menu_admin" }]);
+
+  bot.sendPhoto(chatId, START_IMAGE_URL, {
+    caption: `🧬 *PokéTerps*
+
+Collectionne tes fiches, ajoute-les à *Mon Dex* et explore les catégories 🔥`,
+    parse_mode: "Markdown",
+    reply_markup: { inline_keyboard: keyboard },
+  }).catch(() => {
+    bot.sendMessage(chatId, "🧬 PokéTerps
+
+Choisis une section 👇", {
+      reply_markup: { inline_keyboard: keyboard },
     });
+  });
 }
+
 
 bot.onText(/\/start/, (msg) => sendStartMenu(msg.chat.id));
 
@@ -244,7 +240,7 @@ bot.on("callback_query", async (query) => {
     });
   }
 
-  if (query.data === "back") return sendStartMenu(chatId);
+  if (query.data === "back") return sendStartMenu(chatId, userId);
   if (query.data === "reviews") return bot.sendMessage(chatId, "⭐ Reviews en préparation...");
 });
 

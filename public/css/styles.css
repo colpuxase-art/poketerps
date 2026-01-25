@@ -11298,3 +11298,17 @@ main{ padding-bottom: 86px; } /* leave room for bottom nav */
 .profile-title{font-size:16px;font-weight:900}
 .profile-body{margin-top:10px;color:#fff}
 body{padding-bottom:72px;}
+
+
+
+/* ===== HARVEST PALETTE (PocketTerps vibe) ===== */
+:root{
+  --hx-bg:#070A12;
+  --hx-card:rgba(255,255,255,.06);
+  --hx-border:rgba(255,255,255,.10);
+  --hx-text:rgba(255,255,255,.92);
+  --hx-muted:rgba(255,255,255,.68);
+  --hx-accent1:#F5B942; /* gold */
+  --hx-accent2:#2DD4BF; /* teal */
+  --hx-danger:#ff3b3b;
+}

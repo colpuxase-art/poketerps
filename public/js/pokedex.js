@@ -129,6 +129,8 @@ const pokeName = $("pokeName");
 
   /* ================= STATE ================= */
   let activeType = "all";
+  let subcategories = [];
+
   let activeSub = "all";
   let selected = null;
   let pokedex = [];
@@ -361,24 +363,26 @@ let favs = loadFavs();
 
     subChips.style.display = "flex";
 
-    let options = [];
+    let options = [{ label: "Tous", value: "all" }];
+
+    // Weed: filtre sur weed_kind
     if (activeType === "weed") {
-      options = [
-        { label: "Tous", value: "all" },
+      options = options.concat([
         { label: "Indica", value: "indica" },
         { label: "Sativa", value: "sativa" },
         { label: "Hybrid", value: "hybrid" },
-      ];
+      ]);
       if (activeSub !== "all" && !weedKindValues.includes(activeSub)) activeSub = "all";
     } else {
-      options = [
-        { label: "Tous", value: "all" },
-        { label: "120u", value: "120u" },
-        { label: "90u", value: "90u" },
-        { label: "73u", value: "73u" },
-        { label: "45u", value: "45u" },
-      ];
-      if (activeSub !== "all" && !micronValues.includes(activeSub)) activeSub = "all";
+      // Hash / Extraction / WPFF: sous-catégories (PAS micron)
+      const subs = (subcategories || [])
+        .filter((s) => s.type === activeType)
+        .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+        .map((s) => ({ label: s.label, value: s.id }));
+      options = options.concat(subs);
+
+      // si carte n'a pas de champ subcategory, ce filtre est "soft" (n'exclut rien)
+      if (activeSub !== "all" && !subs.some((s) => s.value === activeSub)) activeSub = "all";
     }
 
     options.forEach((opt) => {
@@ -393,325 +397,34 @@ let favs = loadFavs();
     });
   }
 
-  /* ================= FILTERS ================= */
-  function matchesQuery(card, q) {
-    if (!q) return true;
 
-    const hay = [
-      card.name,
-      card.type,
-      card.micron,
-      card.weed_kind,
-      card.thc,
-      cardDesc(card),
-      ...(card.terpenes || []),
-      ...(card.aroma || []),
-      ...(card.effects || []),
-      card.advice,
-    ].map((x) => norm(x)).join(" ");
-
-    return hay.includes(q);
-  }
-
-  function subMatch(card) {
-    if (activeType === "all" || activeSub === "all") return true;
-    const t = norm(card.type);
-    if (t === "weed") return norm(card.weed_kind) === activeSub;
-    return norm(card.micron) === activeSub;
-  }
-
-  function favMatch(card) {
-    if (!showFavOnly) return true;
-    return favs.has(String(card.id));
-  }
-
-  function sorted(arr) {
-    const copy = [...arr];
-    if (sortMode === "az") {
-      copy.sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
-    } else if (sortMode === "thc") {
-      copy.sort((a, b) => parseThcScore(b.thc) - parseThcScore(a.thc));
-    } else {
-      // "new": plus grand id en premier (simple et efficace)
-      copy.sort((a, b) => Number(b.id) - Number(a.id));
-    }
-    return copy;
-  }
-
-  function filteredList() {
-    const q = norm(searchInput.value);
-    const base = pokedex.filter((p) => {
-      const typeOk = activeType === "all" || norm(p.type) === activeType;
-      return typeOk && subMatch(p) && favMatch(p) && matchesQuery(p, q);
-    });
-    return sorted(base);
-  }
-
-  /* ================= RENDER LIST ================= */
-  function updateBadges(itemsCount) {
-    countBadge.textContent = itemsCount;
-    if (favBadge) favBadge.textContent = `❤️ ${favs.size}`;
-    if (favToggle) favToggle.classList.toggle("active", showFavOnly);
-  }
-
-  function renderList() {
-    const items = filteredList();
-    updateBadges(items.length);
-    listEl.innerHTML = "";
-
-    if (!items.length) {
-      listEl.innerHTML = `<div class="text-secondary p-2">Aucun résultat…</div>`;
-      return;
-    }
-
-    items.forEach((p) => {
-      const btn = document.createElement("button");
-      btn.className =
-        "list-group-item list-group-item-action bg-black text-white border-secondary d-flex align-items-center gap-2 rounded-3 mb-2";
-
-      const extra = extraText(p);
-
-      const isShiny = featured && String(p.id) === String(featured.id);
-      const shinyBadge = isShiny
-        ? `<span class="badge text-bg-warning text-dark" style="margin-left:6px;">✨ SHINY</span>`
-        : "";
-
-      const isFav = favs.has(String(p.id));
-      const favMark = isFav
-        ? `<span class="badge text-bg-danger" style="margin-left:6px;">❤️</span>`
-        : "";
-
-      btn.innerHTML = `
-        <img src="${p.img}" width="40" height="40" style="object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.10);" />
-        <div class="flex-grow-1 text-start">
-          <div class="fw-semibold">${p.name} ${shinyBadge} ${favMark}</div>
-          <div class="small text-secondary">#${p.id} • ${typeLabel(p.type)}${extra}</div>
-        </div>
-        <span class="badge text-bg-danger">Voir</span>
-      `;
-
-      btn.onclick = () => {
-        selectCard(p);
-        haptic("impact", "light");
-      };
-      listEl.appendChild(btn);
-    });
-  }
-
-  /* ================= SELECT ================= */
-  function refreshFavBtn() {
-    if (!favBtn || !selected) return;
-    const isFav = favs.has(String(selected.id));
-    favBtn.textContent = isFav ? "✅ Dans tes favoris" : "❤️ Ajouter aux favoris";
-    favBtn.className = isFav ? "btn btn-sm btn-warning w-100" : "btn btn-sm btn-outline-warning w-100";
-  }
-
-  function selectCard(p) {
-    selected = p;
-
-    if (pokeName) pokeName.textContent = p.name;
-    if (pokeId) pokeId.textContent = `#${p.id}`;
-    if (pokeType) pokeType.textContent = `${typeLabel(p.type)}${extraText(p)}`;
-    if (pokeThc) pokeThc.textContent = p.thc;
-
-    if (pokeDesc) {
-      const line1 = `🧬 Profil: ${cardDesc(p) || "—"}`;
-      const line2 = `🌿 Terpènes: ${formatList(p.terpenes)}`;
-      const line3 = `👃 Arômes: ${formatList(p.aroma)}`;
-      const line4 = `🧠 Effets (ressenti): ${formatList(p.effects)}`;
-      const line5 = `⚠️ Conseils: ${p.advice || "—"}`;
-      pokeDesc.textContent = [line1, "", line2, line3, line4, "", line5].join("\n");
-    }
-
-    if (pokeImg) {
-      pokeImg.src = p.img;
-      pokeImg.style.display = "inline-block";
-    }
-    if (placeholder) placeholder.style.display = "none";
-
-    refreshFavBtn();
-
-    // scroll to details
-    const dc = document.getElementById('detailsCard');
-    if (dc) dc.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  
-  function setActiveBottom(tab) {
-    const map = { dex: navDex, mydex: navMyDex, profile: navProfile };
-    Object.values(map).forEach((el) => el && el.classList.remove("active"));
-    map[tab]?.classList.add("active");
-  }
-
-  function openProfile() {
-    if (!profileModal) return;
-    if (profileUserId) profileUserId.textContent = tgUserId || "—";
-    if (profileFavCount) profileFavCount.textContent = String(favs.size || 0);
-    profileModal.style.display = "block";
-    setActiveBottom("profile");
-  }
-  function closeProfile() {
-    if (!profileModal) return;
-    profileModal.style.display = "none";
-  }
-
-  navDex?.addEventListener("click", () => {
-    showFavOnly = false;
-    renderList();
-    setActiveBottom("dex");
-    closeProfile();
-    toast("Dex");
-  });
-
-  navMyDex?.addEventListener("click", async () => {
-    showFavOnly = true;
-    renderList();
-    setActiveBottom("mydex");
-    closeProfile();
-    toast("Mon Dex ⭐");
-  });
-
-  navProfile?.addEventListener("click", ()=>{ window.location.hash = "profile"; openProfile(); });
-  profileCloseBtn?.addEventListener("click", closeProfile);
-  profileModal?.addEventListener("click", (e) => {
-    const t = e.target;
-    if (t?.dataset?.close) closeProfile();
-  });
-
-/* ================= EVENTS ================= */
-  searchInput.oninput = renderList;
-
-  clearBtn?.addEventListener("click", () => {
-    searchInput.value = "";
-    renderList();
-    toast("Recherche effacée");
-  });
-
-  document.querySelectorAll(".chip").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".chip").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-
-      activeType = btn.dataset.type;
-      activeSub = "all";
-      renderSubChips();
-      renderList();
-      haptic("impact", "light");
-    });
-  });
-
-  sortSelect?.addEventListener("change", () => {
-    sortMode = sortSelect.value;
-    renderList();
-    toast(sortMode === "az" ? "Tri: A–Z" : sortMode === "thc" ? "Tri: THC haut" : "Tri: Nouveau");
-  });
-
-  favToggle?.addEventListener("click", () => {
-    showFavOnly = !showFavOnly;
-    renderList();
-    toast(showFavOnly ? "Mode Favoris ❤️" : "Mode Normal");
-    haptic("impact", "medium");
-  });
-
-  favBtn?.addEventListener("click", async () => {
-    if (!selected) return;
-    const id = String(selected.id);
+  async function loadSubcategories() {
     try {
-      const apiRes = await apiToggleFav(selected.id);
-      if (apiRes && typeof apiRes.favorited === 'boolean') {
-        if (apiRes.favorited) favs.add(id); else favs.delete(id);
-      } else {
-        // fallback local toggle
-        if (favs.has(id)) favs.delete(id); else favs.add(id);
-      }
-    } catch {
-      // fallback local toggle
-      if (favs.has(id)) favs.delete(id); else favs.add(id);
+      const res = await fetch("/api/subcategories", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      subcategories = Array.isArray(data) ? data : [];
+    } catch (e) {
+      console.warn("⚠️ /api/subcategories KO, fallback statique", e);
+      subcategories = [
+        { id:"dry_sift", type:"hash", label:"Dry Sift", sort:10 },
+        { id:"static_sift", type:"hash", label:"Static Sift", sort:15 },
+        { id:"ice_o_lator", type:"hash", label:"Ice-O-Lator", sort:20 },
+        { id:"full_melt", type:"hash", label:"Full Melt", sort:30 },
+
+        { id:"flower", type:"weed", label:"Flower", sort:10 },
+        { id:"small_buds", type:"weed", label:"Small Buds", sort:20 },
+
+        { id:"rosin", type:"extraction", label:"Rosin", sort:10 },
+        { id:"bho", type:"extraction", label:"BHO", sort:20 },
+        { id:"live_resin", type:"extraction", label:"Live Resin", sort:30 },
+
+        { id:"wpff_fresh", type:"wpff", label:"Fresh Frozen", sort:10 },
+        { id:"wpff_cure", type:"wpff", label:"Cured", sort:20 },
+      ];
     }
-
-    if (favs.has(id)) {
-      
-      favs.delete(id);
-      toast("Retiré des favoris");
-    } else {
-      favs.add(id);
-      toast("Ajouté aux favoris ❤️");
-    }
-    saveFavs(favs);
-    refreshFavBtn();
-    renderList();
-    haptic("impact", "medium");
-  });
-
-  randomBtn?.addEventListener("click", () => {
-    const items = filteredList();
-    if (!items.length) return;
-
-    // fun: 15% chance d’aller sur la rare
-    if (featured && Math.random() < 0.15) {
-      selectCard(featured);
-      toast("✨ Random → Rare !");
-      return;
-    }
-
-    selectCard(items[Math.floor(Math.random() * items.length)]);
-    toast("🎲 Random !");
-  });
-
-  shareBtn?.addEventListener("click", async () => {
-    if (!selected) return;
-
-    const shareText =
-      `🧬 ${selected.name} (#${selected.id})\n` +
-      `Catégorie: ${typeLabel(selected.type)}${extraText(selected)}\n` +
-      `${selected.thc}\n\n` +
-      `🌿 Terpènes: ${formatList(selected.terpenes)}\n` +
-      `👃 Arômes: ${formatList(selected.aroma)}\n` +
-      `🧠 Effets (ressenti): ${formatList(selected.effects)}\n\n` +
-      `🧬 Profil: ${cardDesc(selected)}\n\n` +
-      `⚠️ ${selected.advice || "Info éducative. Les effets varient."}`;
-
-    try {
-      await navigator.share?.({ text: shareText });
-      return;
-    } catch {}
-
-    try { await navigator.clipboard?.writeText(shareText); } catch {}
-
-    tg?.showPopup({
-      title: "Partager",
-      message: "Fiche copiée ✅",
-      buttons: [{ type: "ok" }],
-    });
-  });
-
-  closeBtn?.addEventListener("click", () => {
-    if (tg) tg.close();
-    else window.close();
-  });
-
-  themeBtn?.addEventListener("click", toggleTheme);
-
-  /* ================= INIT ================= */
-  (async () => {
-    applyThemeFromStorage();
-    setLoading(true);
-
-    await loadCards();
-    try { favs = await apiLoadMyDexIds(); } catch {}
-    await loadFeatured();
-
-    renderSubChips();
-    renderList();
-
-    setLoading(false);
-
-    // si featured existe, petit “wow”
-    if (featured) {
-      toast("✨ Shiny du moment chargé");
-    }
-  })();
-})();
+  }
+)();
   // Hash routing (#mydex, #profile)
   function applyHashRoute() {
     const h = (window.location.hash || "").toLowerCase();
