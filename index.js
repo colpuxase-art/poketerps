@@ -59,7 +59,7 @@ const isMicron = (v) => micronValues.includes(String(v || '').toLowerCase());
 const isWeedKind = (v) => weedKindValues.includes(String(v || '').toLowerCase());
 
 const csvToArr = (str) =>
-  (str || \`\`)
+  (str || '')
     .split(\`,\`)
     .map((s) => s.trim())
     .filter(Boolean);
@@ -438,7 +438,7 @@ bot.onText(/^\/rare\s+(\d+)(?:\s+([\s\S]+))?$/m, async (msg, match) => {
 
   try {
     const id = Number(match[1]);
-    const title = (match[2] || \`\`).trim();
+    const title = (match[2] || '').trim();
 
     const card = await dbGetCard(id);
     if (!card) return bot.sendMessage(chatId, \`❌ ID introuvable.\`);
@@ -449,10 +449,10 @@ bot.onText(/^\/rare\s+(\d+)(?:\s+([\s\S]+))?$/m, async (msg, match) => {
       updated.type === \`weed\`
         ? updated.weed_kind
           ? ` • ${updated.weed_kind}`
-          : \`\`
+          : ''
         : updated.micron
           ? ` • ${updated.micron}`
-          : \`\`;
+          : '';
 
     bot.sendMessage(
       chatId,
@@ -488,10 +488,10 @@ bot.onText(/^\/rareinfo$/, async (msg) => {
       c.type === \`weed\`
         ? c.weed_kind
           ? ` • ${c.weed_kind}`
-          : \`\`
+          : ''
         : c.micron
           ? ` • ${c.micron}`
-          : \`\`;
+          : '';
 
     bot.sendMessage(
       chatId,
@@ -508,16 +508,16 @@ bot.onText(/^\/list(?:\s+(\w+))?$/, async (msg, match) => {
   if (!isAdmin(chatId)) return bot.sendMessage(chatId, \`⛔ Pas autorisé.\`);
 
   try {
-    const filter = (match[1] || \`\`).toLowerCase();
+    const filter = (match[1] || '').toLowerCase();
     let cards = await dbListCards();
 
     if (filter) {
       if (allowedTypes.has(filter)) {
-        cards = cards.filter((c) => String(c.type || \`\`).toLowerCase() === filter);
+        cards = cards.filter((c) => String(c.type || '').toLowerCase() === filter);
       } else if (isMicron(filter)) {
-        cards = cards.filter((c) => String(c.micron || \`\`).toLowerCase() === filter);
+        cards = cards.filter((c) => String(c.micron || '').toLowerCase() === filter);
       } else if (isWeedKind(filter)) {
-        cards = cards.filter((c) => String(c.weed_kind || \`\`).toLowerCase() === filter);
+        cards = cards.filter((c) => String(c.weed_kind || '').toLowerCase() === filter);
       } else {
         return bot.sendMessage(chatId, \`❌ Filtre inconnu. Exemple: /list weed, /list 90u, /list indica\`);
       }
@@ -528,15 +528,15 @@ bot.onText(/^\/list(?:\s+(\w+))?$/, async (msg, match) => {
     const lines = cards
       .slice(0, 80)
       .map((c) => {
-        const t = String(c.type || \`\`);
+        const t = String(c.type || '');
         const extra =
           t === \`weed\`
             ? c.weed_kind
               ? ` • ${c.weed_kind}`
-              : \`\`
+              : ''
             : c.micron
               ? ` • ${c.micron}`
-              : \`\`;
+              : '';
         return `#${c.id} • ${t}${extra} • ${c.name}`;
       })
       .join(\`\n\`);
@@ -570,7 +570,7 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
   try {
     const id = Number(match[1]);
     const field = match[2].toLowerCase();
-    const value = (match[3] || \`\`).trim();
+    const value = (match[3] || '').trim();
 
     const allowedFields = new Set([
       \`name\`,
@@ -700,17 +700,17 @@ async function addFinish(chatId) {
   const d = state.data;
 
   // sécurité logique
-  const t = String(d.type || \`\`).toLowerCase();
+  const t = String(d.type || '').toLowerCase();
 
   const payload = {
     name: d.name,
     type: t,
     thc: d.thc || \`—\`,
     description: d.description || \`—\`,
-    img: d.img || \`\`,
-    terpenes: csvToArr(d.terpenes || \`\`),
-    aroma: csvToArr(d.aroma || \`\`),
-    effects: csvToArr(d.effects || \`\`),
+    img: d.img || '',
+    terpenes: csvToArr(d.terpenes || ''),
+    aroma: csvToArr(d.aroma || ''),
+    effects: csvToArr(d.effects || ''),
     advice: d.advice || \`Info éducative. Les effets varient selon la personne. Respecte la loi.\`,
     micron: null,
     weed_kind: null,
@@ -731,10 +731,10 @@ async function addFinish(chatId) {
     card.type === \`weed\`
       ? card.weed_kind
         ? ` • ${weedKindLabel(card.weed_kind)}`
-        : \`\`
+        : ''
       : card.micron
         ? ` • ${card.micron}`
-        : \`\`;
+        : '';
 
   bot.sendMessage(
     chatId,
@@ -759,7 +759,7 @@ bot.onText(/^\/addform$/, (msg) => {
   bot.sendMessage(
     chatId,
     \`📝 *Ajout d’une fiche* (formulaire)\n\n\` +
-      \`1/10 — Envoie le *nom*.\nEx: \`Static Hash Premium\`\`,
+      \`1/10 — Envoie le *nom*.\nEx: \`Static Hash Premium'',
     { parse_mode: \`Markdown`, reply_markup: { inline_keyboard: [[{ text: `❌ Annuler`, callback_data: `add_cancel\` }]] } }
   );
 });
@@ -840,7 +840,7 @@ bot.on(\`callback_query\`, async (query) => {
     if (!isWeedKind(k)) return;
 
     state.data.weed_kind = k;
-    state.data.micron = \`\`; // sécurité
+    state.data.micron = ''; // sécurité
     state.step = \`thc\`;
     addWizard.set(chatId, state);
 
@@ -886,10 +886,10 @@ bot.on(\`callback_query\`, async (query) => {
         card.type === \`weed\`
           ? card.weed_kind
             ? ` • ${card.weed_kind}`
-            : \`\`
+            : ''
           : card.micron
             ? ` • ${card.micron}`
-            : \`\`;
+            : '';
 
       return bot.sendMessage(
         chatId,
@@ -1078,7 +1078,7 @@ bot.on(\`callback_query\`, async (query) => {
 /* ===== texte (ADD + EDIT value) ===== */
 bot.on(`message`, async (msg) => {
   const chatId = msg.chat.id;
-  const text = (msg.text || ``).trim();
+  const text = (msg.text || '').trim();
   if (!isAdmin(chatId)) return;
   if (text.startsWith(`/`)) return;
 
