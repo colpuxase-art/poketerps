@@ -182,13 +182,10 @@ function sendStartMenu(chatId, userId) {
   const isA = isAdmin(userId);
   bot
     .sendPhoto(chatId, START_IMAGE_URL, {
-      caption:
-        "🌾 *HARVESTDEX*
-" +
-        "_Saisons • Raretés • Collection_
+      caption: `🌾 *HARVESTDEX*
+_Saisons • Raretés • Collection_
 
-" +
-        "➡️ Ouvre le Dex, ajoute des fiches à *Mon Dex* et collectionne 🔥",
+➡️ Ouvre le Dex, ajoute des fiches à *Mon Dex* et collectionne 🔥`,
       parse_mode: "Markdown",
     })
     .then(() => {
