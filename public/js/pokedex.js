@@ -89,17 +89,16 @@
   const featuredCount = $("featuredCount");
   const sparklesWrap = $("sparkles");
 
-  // Partner box elements
-const partnerBox = $("partnerBox");
-const partnerImg = $("partnerImg");
-const partnerTitle = $("partnerTitle");
-const partnerName = $("partnerName");
-const partnerMeta = $("partnerMeta");
-const partnerLine = $("partnerLine");
-const partnerViewBtn = $("partnerViewBtn");
+  // Partner box
+  const partnerBox = $("partnerBox");
+  const partnerImg = $("partnerImg");
+  const partnerTitle = $("partnerTitle");
+  const partnerName = $("partnerName");
+  const partnerMeta = $("partnerMeta");
+  const partnerLine = $("partnerLine");
+  const partnerViewBtn = $("partnerViewBtn");
 
-// MyDex/Profile panels
-
+  // MyDex/Profile panels
   const myDexList = $("myDexList");
   const myDexEmpty = $("myDexEmpty");
 
@@ -294,6 +293,111 @@ const partnerViewBtn = $("partnerViewBtn");
     if (detailsReal) detailsReal.style.display = isLoading ? "none" : "block";
   }
 
+
+  /* ================= SECTIONS (Popular / Trending / New) ================= */
+  const sectionsWrap = $("sectionsWrap");
+  const popularSection = $("popularSection");
+  const trendingSection = $("trendingSection");
+  const newSection = $("newSection");
+
+  function renderMiniSection(targetEl, title, badge, cards, onSeeAll, variant){
+    if (!targetEl) return;
+    if (!cards || !cards.length){
+      targetEl.innerHTML = "";
+      targetEl.style.display = "none";
+      return;
+    }
+
+    targetEl.style.display = "block";
+
+    const head = `
+      <div class="mini-head">
+        <div class="d-flex align-items-center gap-2">
+          <span class="mini-title">${title}</span>
+          <span class="mini-badge">${badge}</span>
+        </div>
+        <button class="btn btn-sm btn-outline-light" type="button" data-seeall="1">Voir tous</button>
+      </div>
+    `;
+
+    const grid = document.createElement("div");
+    grid.className = "mini-grid";
+    cards.slice(0,8).forEach((c)=>{
+      const item = document.createElement("div");
+      item.className = "mini-card legendary " + (variant || "");
+      item.innerHTML = `
+        <img src="${c.img || "https://i.imgur.com/0HqWQvH.png"}" alt="">
+        <div class="flex-grow-1">
+          <div class="mini-name">${safeStr(c.name)}</div>
+          <div class="mini-meta">#${c.id} • ${typeLabel(c.type)}</div>
+        </div>
+      `;
+      item.addEventListener("click", ()=>{
+        selectCard(c, true);
+        haptic("light");
+      });
+      grid.appendChild(item);
+    });
+
+    targetEl.className = "mini-section";
+    targetEl.innerHTML = head;
+    targetEl.appendChild(grid);
+
+    const btn = targetEl.querySelector("[data-seeall]");
+    btn?.addEventListener("click", ()=>{
+      onSeeAll?.();
+      haptic("medium");
+    });
+  }
+
+  async function loadSections(){
+    try{
+      const [pop, trend, news] = await Promise.all([
+        fetch("/api/stats/popular?limit=8", { cache:"no-store"}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+        fetch("/api/stats/trending?days=7&limit=8", { cache:"no-store"}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+        fetch("/api/stats/new?days=30&limit=8", { cache:"no-store"}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+      ]);
+
+      if (sectionsWrap) sectionsWrap.style.display = (pop.length||trend.length||news.length) ? "block" : "none";
+
+      renderMiniSection(popularSection, "⭐ Populaire", "all-time", pop, ()=>{
+        sortMode = "thc";
+        if (sortSelect) sortSelect.value = "thc";
+        activeType = "all"; activeSub = "all"; activeFarm = "all";
+        document.querySelectorAll(".chip").forEach(x=>x.classList.remove("active"));
+        document.querySelector('.chip[data-type="all"]')?.classList.add("active");
+        renderSubChips();
+        renderList(true);
+        listEl?.scrollIntoView({behavior:"smooth", block:"start"});
+      }, "legend-pop");
+
+      renderMiniSection(trendingSection, "🔥 Tendance", "7 jours", trend, ()=>{
+        sortMode = "new";
+        if (sortSelect) sortSelect.value = "new";
+        activeType = "all"; activeSub = "all"; activeFarm = "all";
+        document.querySelectorAll(".chip").forEach(x=>x.classList.remove("active"));
+        document.querySelector('.chip[data-type="all"]')?.classList.add("active");
+        renderSubChips();
+        renderList(true);
+        listEl?.scrollIntoView({behavior:"smooth", block:"start"});
+      }, "legend-trend");
+
+      renderMiniSection(newSection, "🆕 Nouveautés", "30 jours", news, ()=>{
+        sortMode = "new";
+        if (sortSelect) sortSelect.value = "new";
+        activeType = "all"; activeSub = "all"; activeFarm = "all";
+        document.querySelectorAll(".chip").forEach(x=>x.classList.remove("active"));
+        document.querySelector('.chip[data-type="all"]')?.classList.add("active");
+        renderSubChips();
+        renderList(true);
+        listEl?.scrollIntoView({behavior:"smooth", block:"start"});
+      }, "legend-new");
+
+    }catch(e){
+      if (sectionsWrap) sectionsWrap.style.display = "none";
+    }
+  }
+
   /* ================= FEATURED ================= */
   function makeSparkles() {
     if (!sparklesWrap) return;
@@ -401,7 +505,7 @@ const partnerViewBtn = $("partnerViewBtn");
       btn.addEventListener("click", () => {
         activeSub = opt.value;
         renderSubChips();
-        renderList();
+        renderList(true);
         haptic("light");
       });
       subChips.appendChild(btn);
@@ -424,19 +528,20 @@ const partnerViewBtn = $("partnerViewBtn");
       }
     } else {
       if (activeSub !== "all") {
-        const scId = card.subcategory_id != null ? String(card.subcategory_id) : "";
+        const sc = norm(card.subcategory);
         // si pas de subcategory en DB, on ne casse pas le Dex :
-        if (scId && scId !== String(activeSub)) return false;
-        if (!scId) return false;
-        
+        if (sc && sc !== activeSub) return false;
+        if (!sc) {
+          // si aucune donnée, on laisse passer (soft filter)
+        }
       }
     }
 
-
-    // Farm filter
+    // farm filter
     if (activeFarm !== "all") {
-      const fid = card.farm?.id ?? card.farm_id ?? null;
-      if (String(fid || "") !== String(activeFarm)) return false;
+      const fid = card.farm_id != null ? String(card.farm_id) : (card.farm?.id != null ? String(card.farm.id) : "");
+      if (fid && fid !== String(activeFarm)) return false;
+      if (!fid) return false;
     }
 
     if (showFavOnly) {
@@ -494,13 +599,18 @@ const partnerViewBtn = $("partnerViewBtn");
   }
 
   /* ================= RENDER LIST ================= */
-  function renderList() {
-    const items = sortCards(pokedex.filter(matchesFilters));
+  let listLimit = 30;
+  let lastRenderedCount = 0;
+
+  function renderList(resetLimit = false) {
+    if (resetLimit) listLimit = 30;
+    const itemsAll = sortCards(pokedex.filter(matchesFilters));
+    const items = itemsAll.slice(0, listLimit);
 
     listEl.innerHTML = "";
     updateBadges();
 
-    if (!items.length) {
+    if (!itemsAll.length) {
       const empty = document.createElement("div");
       empty.className = "text-secondary mt-2";
       empty.textContent = "Aucune fiche trouvée.";
@@ -518,9 +628,9 @@ const partnerViewBtn = $("partnerViewBtn");
       const subTxt = (() => {
         if (norm(c.type) === "weed" && c.weed_kind) return ` • ${weedKindLabel(norm(c.weed_kind))}`;
         // ✅ on n’affiche pas les microns en sous-catégorie, seulement éventuellement subcategory label
-        const scId = c.subcategory_id != null ? String(c.subcategory_id) : "";
-        if (!scId) return "";
-        const found = (subcategories || []).find(x => String(x.id) === scId);
+        const sc = norm(c.subcategory);
+        if (!sc) return "";
+        const found = (subcategories || []).find(x => x.id === sc);
         return found ? ` • ${found.label}` : "";
       })();
 
@@ -543,6 +653,20 @@ const partnerViewBtn = $("partnerViewBtn");
 
       listEl.appendChild(btn);
     });
+
+    // Charger plus
+    if (itemsAll.length > items.length) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "btn btn-outline-light w-100 mt-2";
+      more.textContent = `Voir plus (${itemsAll.length - items.length})`;
+      more.addEventListener("click", () => {
+        listLimit += 30;
+        renderList(false);
+        haptic("light");
+      });
+      listEl.appendChild(more);
+    }
   }
 
   /* ================= SELECT CARD ================= */
@@ -562,7 +686,7 @@ const partnerViewBtn = $("partnerViewBtn");
       const t = norm(card.type);
       let sub = "";
       if (t === "weed" && card.weed_kind) sub = ` • ${weedKindLabel(norm(card.weed_kind))}`;
-      const scId = card.subcategory_id != null ? String(card.subcategory_id) : "";
+      const sc = norm(card.subcategory);
       if (sc && t !== "weed") {
         const found = (subcategories || []).find(x => x.id === sc);
         if (found) sub = ` • ${found.label}`;
@@ -587,6 +711,15 @@ const partnerViewBtn = $("partnerViewBtn");
 
     setFavUI(card);
     updateBadges();
+
+    // track view (si dispo)
+    try {
+      fetch("/api/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: tgUserId ? Number(tgUserId) : null, card_id: Number(card.id), event_type: "view" }),
+      }).catch(() => {});
+    } catch {}
 
     if (doScroll) scrollToDetails();
   }
@@ -682,23 +815,23 @@ const partnerViewBtn = $("partnerViewBtn");
       activeType = b.dataset.type || "all";
       activeSub = "all";
       renderSubChips();
-      renderList();
+      renderList(true);
       haptic("light");
     });
   });
 
   // search
-  searchInput?.addEventListener("input", () => renderList());
+  searchInput?.addEventListener("input", () => renderList(true));
   clearBtn?.addEventListener("click", () => {
     searchInput.value = "";
-    renderList();
+    renderList(true);
     haptic("light");
   });
 
   // sort
   sortSelect?.addEventListener("change", () => {
     sortMode = sortSelect.value || "new";
-    renderList();
+    renderList(true);
     haptic("light");
   });
 
@@ -780,7 +913,7 @@ const partnerViewBtn = $("partnerViewBtn");
     applyThemeFromStorage();
     setLoading(true);
 
-    await Promise.all([loadSubcategories(), loadFarms(), loadCards()]);
+    await Promise.all([loadSubcategories(), loadCards(), loadFarms()]);
     await loadFeatured();
 
     renderSubChips();
