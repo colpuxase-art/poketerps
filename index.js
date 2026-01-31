@@ -68,7 +68,7 @@ function stripParseMode(opts = {}) {
   delete o.parse_mode;
   return o;
 }
-async async function safeSendMessage(chatId, text, opts) {
+async function safeSendMessage(chatId, text, opts) {
   try {
     return await bot.sendMessage(chatId, text, opts);
   } catch (e) {
@@ -86,7 +86,7 @@ async async function safeSendMessage(chatId, text, opts) {
     return null;
   }
 }
-async async function safeSendPhoto(chatId, photo, opts) {
+async function safeSendPhoto(chatId, photo, opts) {
   try {
     return await bot.sendPhoto(chatId, photo, opts);
   } catch (e) {
