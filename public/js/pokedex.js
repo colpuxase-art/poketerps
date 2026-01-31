@@ -89,6 +89,29 @@
   const featuredCount = $("featuredCount");
   const sparklesWrap = $("sparkles");
 
+  // Partner elements
+  const partnerBox = $("partnerBox");
+  const partnerImg = $("partnerImg");
+  const partnerTitle = $("partnerTitle");
+  const partnerName = $("partnerName");
+  const partnerMeta = $("partnerMeta");
+  const partnerLine = $("partnerLine");
+  const partnerViewBtn = $("partnerViewBtn");
+
+  // Farms UI
+  const farmSelect = $("farmSelect");
+  const farmSection = $("farmSection");
+  const farmSearchInput = $("farmSearchInput");
+  const farmClearBtn = $("farmClearBtn");
+  const farmList = $("farmList");
+
+  // Admin modal
+  const adminBtn = $("adminBtn");
+  const adminModalEl = $("adminModal");
+  const adminCommands = $("adminCommands");
+  const copyAdminBtn = $("copyAdminBtn");
+
+
   // MyDex/Profile panels
   const myDexList = $("myDexList");
   const myDexEmpty = $("myDexEmpty");
@@ -105,6 +128,8 @@
   let pokedex = [];
   let featured = null;
   let subcategories = [];
+  let farms = [];
+  let activeFarm = "all";
 
   let activeType = "all";
   let activeSub = "all"; // all | indica/sativa/hybrid | subcategory id
@@ -193,16 +218,7 @@
         advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
         is_featured: Boolean(c.is_featured),
         featured_title: c.featured_title || null,
-        subcategory_id: c.subcategory_id ?? null,
-        subcategory_id: c.subcategory_id ?? null,
-        subcategory: c.subcategory || c.sub_category || null,
-        farm_id: c.farm_id ?? null,
-        farm: c.farm || null, // ✅ compat
-        farm_id: c.farm_id ?? null,
-        farm: c.farm || null,
-        rarity: c.rarity || null,
-        is_partner: Boolean(c.is_partner),
-        partner_title: c.partner_title || null,
+        subcategory: c.subcategory || c.sub_category || null, // ✅ compat
       }));
 
       pokedex = mapped.length ? mapped : fallbackPokedex;
@@ -240,11 +256,8 @@
         aroma: Array.isArray(c.aroma) ? c.aroma : [],
         effects: Array.isArray(c.effects) ? c.effects : [],
         advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
-        featured_title: c.featured_title || "✨ Rare du moment",
-        subcategory_id: c.subcategory_id ?? null,
+        featured_title: c.featured_title || "✨ Shiny du moment",
         subcategory: c.subcategory || c.sub_category || null,
-        farm_id: c.farm_id ?? null,
-        farm: c.farm || null,
       };
 
       renderFeatured();
@@ -254,94 +267,6 @@
     }
   }
 
-
-async function loadPartner() {
-  try {
-    const res = await fetch("/api/partner", { cache: "no-store" });
-    if (!res.ok) {
-      if (partnerBox) partnerBox.style.display = "none";
-      return;
-    }
-    const c = await res.json();
-    if (!c) {
-      if (partnerBox) partnerBox.style.display = "none";
-      return;
-    }
-
-    const partner = {
-      id: Number(c.id) || c.id,
-      name: c.name || "Sans nom",
-      type: c.type || "hash",
-      micron: c.micron ?? null,
-      weed_kind: c.weed_kind ?? null,
-      thc: c.thc || "—",
-      desc: cardDesc(c),
-      img: c.img || "https://i.imgur.com/0HqWQvH.png",
-      terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
-      aroma: Array.isArray(c.aroma) ? c.aroma : [],
-      effects: Array.isArray(c.effects) ? c.effects : [],
-      advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
-      partner_title: c.partner_title || "🤝 Partenaire du moment",
-      subcategory_id: c.subcategory_id ?? null,
-      subcategory: c.subcategory || null,
-      farm: c.farm || null,
-    };
-
-    // render
-    if (partnerBox) partnerBox.style.display = "block";
-    if (partnerImg) partnerImg.src = partner.img;
-    if (partnerTitle) partnerTitle.textContent = partner.partner_title;
-    if (partnerName) partnerName.textContent = partner.name;
-    if (partnerMeta) {
-      const parts = [typeLabel(partner.type)];
-      if (norm(partner.type) === "weed" && partner.weed_kind) parts.push(weedKindLabel(norm(partner.weed_kind)));
-      if (norm(partner.type) !== "weed" && partner.subcategory) parts.push(safeStr(partner.subcategory));
-      if (partner.micron) parts.push(safeStr(partner.micron));
-      if (partner.farm?.name) parts.push(`🌾 ${safeStr(partner.farm.name)}`);
-      partnerMeta.textContent = parts.join(" • ");
-    }
-    if (partnerLine) partnerLine.textContent = `🧬 ${partner.desc || "—"}`;
-    partnerViewBtn?.addEventListener("click", () => {
-      selectCard(partner, true);
-      toast("🤝 Partenaire affiché !");
-      haptic("medium");
-    });
-  } catch {
-    if (partnerBox) partnerBox.style.display = "none";
-  }
-}
-
-async function loadFarms() {
-  try {
-    const res = await fetch("/api/farms", { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    farms = Array.isArray(data) ? data : [];
-  } catch (e) {
-    farms = [];
-  }
-
-  if (farmSelect) {
-    farmSelect.innerHTML = "";
-    const optAll = document.createElement("option");
-    optAll.value = "all";
-    optAll.textContent = "🌾 Toutes les fermes";
-    farmSelect.appendChild(optAll);
-
-    farms.forEach((f) => {
-      const o = document.createElement("option");
-      o.value = String(f.id);
-      o.textContent = f.name ? `🌾 ${f.name}` : `Farm #${f.id}`;
-      farmSelect.appendChild(o);
-    });
-
-    farmSelect.value = String(activeFarm);
-    farmSelect.addEventListener("change", () => {
-      activeFarm = farmSelect.value || "all";
-      renderList();
-    });
-  }
-}
   async function loadSubcategories() {
     try {
       const res = await fetch("/api/subcategories", { cache: "no-store" });
@@ -512,13 +437,15 @@ async function loadFarms() {
       }
     } else {
       if (activeSub !== "all") {
-        const sc = norm(card.subcategory);
-        // si pas de subcategory en DB, on ne casse pas le Dex :
-        if (sc && sc !== activeSub) return false;
-        if (!sc) {
-          // si aucune donnée, on laisse passer (soft filter)
-        }
+        const scId = card.subcategory_id != null ? String(card.subcategory_id) : null;
+        if (scId && scId !== String(activeSub)) return false;
+        // si pas de subcategory_id, soft-filter (on laisse passer)
       }
+    }
+
+    if (activeFarm !== "all") {
+      const fid = card.farm_id != null ? String(card.farm_id) : (card.farm && card.farm.id != null ? String(card.farm.id) : "");
+      if (fid && fid !== String(activeFarm)) return false;
     }
 
     if (showFavOnly) {
@@ -577,6 +504,14 @@ async function loadFarms() {
 
   /* ================= RENDER LIST ================= */
   function renderList() {
+    if (activeType === "farm") {
+      if (farmSection) farmSection.style.display = "block";
+      listEl.innerHTML = "";
+      updateBadges();
+      return;
+    } else {
+      if (farmSection) farmSection.style.display = "none";
+    }
     const items = sortCards(pokedex.filter(matchesFilters));
 
     listEl.innerHTML = "";
@@ -600,10 +535,12 @@ async function loadFarms() {
       const subTxt = (() => {
         if (norm(c.type) === "weed" && c.weed_kind) return ` • ${weedKindLabel(norm(c.weed_kind))}`;
         // ✅ on n’affiche pas les microns en sous-catégorie, seulement éventuellement subcategory label
-        const sc = norm(c.subcategory);
-        if (!sc) return "";
-        const found = (subcategories || []).find(x => x.id === sc);
-        return found ? ` • ${found.label}` : "";
+        const scLabel = safeStr(c.subcategory || "").trim();
+        if (c.subcategory_id != null) {
+          const found = (subcategories || []).find(x => String(x.id) === String(c.subcategory_id));
+          return found ? ` • ${found.label}` : (scLabel ? ` • ${scLabel}` : "");
+        }
+        return scLabel ? ` • ${scLabel}` : "";
       })();
 
       btn.innerHTML = `
@@ -644,10 +581,13 @@ async function loadFarms() {
       const t = norm(card.type);
       let sub = "";
       if (t === "weed" && card.weed_kind) sub = ` • ${weedKindLabel(norm(card.weed_kind))}`;
-      const sc = norm(card.subcategory);
-      if (sc && t !== "weed") {
-        const found = (subcategories || []).find(x => x.id === sc);
-        if (found) sub = ` • ${found.label}`;
+      if (t !== "weed") {
+        if (card.subcategory_id != null) {
+          const found = (subcategories || []).find(x => String(x.id) === String(card.subcategory_id));
+          if (found) sub = ` • ${found.label}`;
+        } else if (card.subcategory) {
+          sub = ` • ${safeStr(card.subcategory)}`;
+        }
       }
       // ✅ micron affiché dans la fiche (pas en sous chips)
       const micron = (t !== "weed" && card.micron) ? ` • ${norm(card.micron)}` : "";
@@ -699,10 +639,7 @@ async function loadFarms() {
           aroma: Array.isArray(c.aroma) ? c.aroma : [],
           effects: Array.isArray(c.effects) ? c.effects : [],
           advice: c.advice || "",
-          subcategory_id: c.subcategory_id ?? null,
-        subcategory: c.subcategory || c.sub_category || null,
-        farm_id: c.farm_id ?? null,
-        farm: c.farm || null,
+          subcategory: c.subcategory || c.sub_category || null,
         }));
 
         // sync local favs from server set
@@ -757,6 +694,53 @@ async function loadFarms() {
   window.loadMyDex = loadMyDex;
   window.loadProfile = loadProfile;
 
+
+  /* ================= FARMS LIST ================= */
+  function renderFarmList() {
+    if (!farmList) return;
+    farmList.innerHTML = "";
+
+    const q = norm(farmSearchInput?.value || "");
+    const list = (farms || []).filter((f) => {
+      const bag = [f.name, f.country, f.instagram, f.website].map(norm).join(" ");
+      return !q || bag.includes(q);
+    });
+
+    if (!list.length) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary mt-2";
+      empty.textContent = "Aucune farm trouvée.";
+      farmList.appendChild(empty);
+      return;
+    }
+
+    list.forEach((f) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "list-group-item list-group-item-action bg-black text-white border-secondary";
+      btn.style.borderRadius = "14px";
+      btn.style.marginBottom = "8px";
+      btn.innerHTML = `
+        <div class="d-flex align-items-center justify-content-between gap-2">
+          <div>
+            <div class="fw-bold">🌾 ${safeStr(f.name || ("Farm #" + f.id))}</div>
+            <div class="text-secondary small">${safeStr(f.country || "")}</div>
+          </div>
+          <div class="text-warning">›</div>
+        </div>
+      `;
+      btn.addEventListener("click", () => {
+        activeFarm = String(f.id);
+        if (farmSelect) farmSelect.value = String(f.id);
+        // retourne sur "Tous"
+        document.querySelector('.chip[data-type="all"]')?.click?.();
+        toast(`🌾 ${safeStr(f.name)} sélectionnée`);
+        haptic("light");
+      });
+      farmList.appendChild(btn);
+    });
+  }
+
   /* ================= EVENTS ================= */
   // category chips
   document.querySelectorAll(".chip").forEach((b) => {
@@ -766,6 +750,12 @@ async function loadFarms() {
 
       activeType = b.dataset.type || "all";
       activeSub = "all";
+
+      if (farmSection) farmSection.style.display = (activeType === "farm") ? "block" : "none";
+      if (activeType === "farm") {
+        renderFarmList();
+      }
+
       renderSubChips();
       renderList();
       haptic("light");
@@ -774,6 +764,14 @@ async function loadFarms() {
 
   // search
   searchInput?.addEventListener("input", () => renderList());
+
+  // farm search
+  farmSearchInput?.addEventListener("input", () => renderFarmList());
+  farmClearBtn?.addEventListener("click", () => {
+    if (farmSearchInput) farmSearchInput.value = "";
+    renderFarmList();
+    haptic("light");
+  });
   clearBtn?.addEventListener("click", () => {
     searchInput.value = "";
     renderList();
@@ -865,9 +863,8 @@ async function loadFarms() {
     applyThemeFromStorage();
     setLoading(true);
 
-    await Promise.all([loadSubcategories(), loadCards()]);
+    await Promise.all([loadSubcategories(), loadFarms(), loadCards()]);
     await loadFeatured();
-    await loadPartner();
 
     renderSubChips();
     renderList();

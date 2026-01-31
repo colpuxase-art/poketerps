@@ -173,6 +173,14 @@
 
       /* ✅ anchor for scroll target */
       #detailsAnchor { scroll-margin-top: 80px; }
+    
+      /* HarvestDex rows */
+      .hd-row{ display:flex; gap:10px; overflow:auto; padding-bottom:6px; scrollbar-width: none; }
+      .hd-row::-webkit-scrollbar{ display:none; }
+      .hd-mini{ min-width: 220px; flex: 0 0 auto; border:1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); border-radius: 16px; padding:10px; cursor:pointer; }
+      .hd-mini:hover{ border-color: rgba(255,193,7,.35); box-shadow: 0 10px 26px rgba(0,0,0,.45); }
+      .hd-mini .t1{ font-weight:700; }
+      .hd-mini .t2{ font-size:.85rem; color: rgba(255,255,255,.65); }
     </style>
   </head>
 
@@ -180,11 +188,12 @@
     <!-- NAVBAR -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-danger">
       <div class="container">
-        <a class="navbar-brand fw-bold text-danger" href="#">PokéTerps</a>
+        <a class="navbar-brand fw-bold text-danger" href="#">HarvestDex</a>
 
         <div class="d-flex gap-2">
           <button id="themeBtn" class="btn btn-sm btn-outline-warning" type="button">✨ Shiny</button>
           <button id="closeBtn" class="btn btn-sm btn-outline-danger" type="button">Fermer</button>
+          <button id="adminBtn" class="btn btn-sm btn-outline-light" type="button" style="display:none;">🧰 Admin</button>
         </div>
       </div>
     </nav>
@@ -248,28 +257,31 @@
                     </div>
                   </div>
 
+                  
+                  <!-- QUICK SECTIONS -->
+                  <div class="mb-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                      <div class="fw-bold">🔥 Tendance</div>
+                      <button id="trendMoreBtn" class="btn btn-sm btn-outline-light" type="button">Voir tout</button>
+                    </div>
+                    <div id="trendRow" class="hd-row mt-2"></div>
+                  </div>
 
-<!-- PARTNER BOX -->
-<div id="partnerBox" class="mb-3" style="display:none;">
-  <div class="featured-card partner-card">
-    <div class="d-flex gap-3 align-items-center">
-      <img id="partnerImg" src="https://i.imgur.com/0HqWQvH.png" class="featured-img" alt="partner">
-      <div class="flex-grow-1">
-        <div id="partnerTitle" class="featured-title">🤝 Partenaire du moment</div>
-        <div class="d-flex align-items-center justify-content-between gap-2">
-          <div>
-            <div id="partnerName" class="featured-name">—</div>
-            <div id="partnerMeta" class="featured-mini">—</div>
-          </div>
-          <div class="d-flex align-items-center gap-2">
-            <button id="partnerViewBtn" class="btn btn-sm btn-outline-light featured-btn" type="button">Voir</button>
-          </div>
-        </div>
-        <div id="partnerLine" class="mt-2 featured-mini">🧬 —</div>
-      </div>
-    </div>
-  </div>
-</div>
+                  <div class="mb-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                      <div class="fw-bold">⭐ Nouveautés</div>
+                      <button id="newMoreBtn" class="btn btn-sm btn-outline-light" type="button">Voir tout</button>
+                    </div>
+                    <div id="newRow" class="hd-row mt-2"></div>
+                  </div>
+
+                  <div class="mb-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                      <div class="fw-bold">🏆 Populaire</div>
+                      <button id="popularMoreBtn" class="btn btn-sm btn-outline-light" type="button">Voir tout</button>
+                    </div>
+                    <div id="popularRow" class="hd-row mt-2"></div>
+                  </div>
 
                   <!-- CONTROLS -->
                   <div class="control-pill mb-3">
@@ -284,9 +296,6 @@
                           <option value="new">🆕 Nouveau</option>
                           <option value="az">A–Z</option>
                           <option value="thc">🔥 THC (haut)</option>
-                        </select>
-                        <select id="farmSelect" class="form-select form-select-sm bg-dark text-white border-secondary" style="width:auto;">
-                          <option value="all">🌾 Toutes les fermes</option>
                         </select>
                         <button id="favToggle" class="btn btn-sm pill-btn" type="button">❤️ Favoris</button>
                       </div>
@@ -311,10 +320,23 @@
                     <button class="btn btn-sm btn-outline-success chip" data-type="weed" type="button">Weed</button>
                     <button class="btn btn-sm btn-outline-warning chip" data-type="extraction" type="button">Extraction</button>
                     <button class="btn btn-sm btn-outline-info chip" data-type="wpff" type="button">WPFF</button>
+                    <button class="btn btn-sm btn-outline-light chip" data-type="farm" type="button">🌾 Farms</button>
                   </div>
 
                   <!-- Sub-catégories -->
                   <div id="subChips"></div>
+
+                  <!-- Farms section (visible only when type=farm) -->
+                  <div id="farmSection" style="display:none;" class="mt-3">
+                    <div class="control-pill mb-2">
+                      <div class="d-flex gap-2">
+                        <input id="farmSearchInput" class="form-control bg-dark text-white border-secondary" type="search" placeholder="Rechercher une farm…" autocomplete="off" />
+                        <button id="farmClearBtn" class="btn btn-outline-light" type="button">✕</button>
+                      </div>
+                    </div>
+                    <div id="farmList" class="list-group list-group-flush"></div>
+                  </div>
+
 
                   <!-- Skeleton list -->
                   <div id="listSkeleton" style="display:none;" class="mt-3">
@@ -402,7 +424,7 @@ Ici tu verras la fiche complète (terpènes, arômes, effets, conseils).
                   </div>
 
                   <div class="mt-3 text-end">
-                    <small class="text-secondary"><span>POKETERPS 1.0</span></small>
+                    <small class="text-secondary"><span>HARVESTDEX 1.0</span></small>
                   </div>
                 </div>
               </div>
@@ -456,6 +478,26 @@ Ici tu verras la fiche complète (terpènes, arômes, effets, conseils).
         HarvestDex © <span id="year"></span>
       </div>
     </footer>
+
+    
+    <!-- ADMIN MODAL -->
+    <div class="modal fade" id="adminModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-black text-white border border-secondary rounded-4">
+          <div class="modal-header border-secondary">
+            <h5 class="modal-title">🧰 Commandes Admin</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <pre id="adminCommands" class="mb-0" style="white-space:pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: .95rem;"></pre>
+          </div>
+          <div class="modal-footer border-secondary">
+            <button id="copyAdminBtn" type="button" class="btn btn-outline-light">📋 Copier</button>
+            <button type="button" class="btn btn-danger" data-bs-dismiss="modal">Fermer</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div id="toast">—</div>
 

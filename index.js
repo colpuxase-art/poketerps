@@ -58,12 +58,9 @@ const ADMIN_IDS = new Set([6675436692]); // ✅ TON USER ID
 const isAdminUser = (userId) => ADMIN_IDS.has(Number(userId));
 
 // =========================
-// Subcategories + Farms (DB-first)
+// Subcategories (app + bot)
 // =========================
-
-// ⚠️ Fallback uniquement si la table `subcategories` n'existe pas encore.
-// (utile pour booter le projet en dev)
-const DEFAULT_SUBCATEGORIES = [
+const SUBCATEGORIES = [
   // HASH
   { id: "dry_sift", type: "hash", label: "Dry Sift", sort: 10 },
   { id: "static_sift", type: "hash", label: "Static Sift", sort: 15 },
@@ -104,267 +101,7 @@ const DEFAULT_SUBCATEGORIES = [
   { id: "wpff_full_spectrum", type: "wpff", label: "Full Spectrum", sort: 30 },
 ];
 
-// Cache simple (évite de spammer la DB)
-const _cache = {
-  subcategories: { ts: 0, data: [] },
-  farms: { ts: 0, data: [] },
-};
-const CACHE_TTL_MS = 60_000;
-
-// =========================
-// DB: compat FR/EN (tables + colonnes)
-// =========================
-const TABLES = {
-  cards: ["cartes", "cards"],
-  favorites: ["favoris", "favorites"],
-  farms: ["fermes", "farms"],
-  subcategories: ["subcategories", "sous-catégories", "sous_categories", "sous-categories"],
-};
-
-function isMissingRelation(err) {
-  const m = String(err?.message || "").toLowerCase();
-  return m.includes("does not exist") || m.includes("relation") || m.includes("not found");
-}
-
-async function runWithTable(candidates, fn) {
-  let lastErr = null;
-  for (const t of candidates) {
-    try {
-      return await fn(t);
-    } catch (e) {
-      lastErr = e;
-      if (isMissingRelation(e)) continue;
-      throw e;
-    }
-  }
-  throw lastErr || new Error("Table introuvable");
-}
-
-function pick(obj, keys) {
-  for (const k of keys) {
-    if (obj && Object.prototype.hasOwnProperty.call(obj, k) && obj[k] !== undefined) return obj[k];
-  }
-  return undefined;
-}
-
-function normalizeArray(v) {
-  if (!v) return [];
-  if (Array.isArray(v)) return v.filter(Boolean);
-  // parfois stocké en texte "a,b,c"
-  if (typeof v === "string") return v.split(",").map((s) => s.trim()).filter(Boolean);
-  return [];
-}
-
-function normalizeCardRow(r) {
-  if (!r) return null;
-
-  const id = pick(r, ["id"]);
-  const name = pick(r, ["nom", "name"]) ?? "";
-  const type = pick(r, ["taper", "type"]) ?? "";
-  const thc = pick(r, ["THC", "thc"]) ?? "";
-  const description = pick(r, ["description", "desc"]) ?? "";
-  const img = pick(r, ["image", "img"]) ?? "";
-  const advice = pick(r, ["conseil", "advice"]) ?? "";
-  const micron = pick(r, ["micron"]) ?? null;
-
-  const terpenes = normalizeArray(pick(r, ["terpènes", "terpenes"]));
-  const aroma = normalizeArray(pick(r, ["arôme", "arome", "aroma"]));
-  const effects = normalizeArray(pick(r, ["effets", "effects"]));
-
-  const season = pick(r, ["saison", "season"]) ?? null;
-
-  const weed_kind = pick(r, ["type_de_mauvaise_herbe", "weed_kind"]) ?? null;
-
-  const subcategory_id = pick(r, ["sous-catégorie_id", "subcategory_id"]) ?? null;
-  const farm_id = pick(r, ["ferme_id", "farm_id"]) ?? null;
-
-  const rarity = pick(r, ["rareté", "rarity"]) ?? null;
-
-  const is_featured = Boolean(pick(r, ["est_mis_en_avant", "is_featured"]) ?? false);
-  const featured_title = pick(r, ["titre_vedette", "featured_title"]) ?? null;
-
-  const is_partner = Boolean(pick(r, ["est_partenaire", "is_partner"]) ?? false);
-  const partner_title = pick(r, ["titre_partenaire", "partner_title"]) ?? null;
-
-  return {
-    id,
-    name,
-    type,
-    thc,
-    description,
-    img,
-    advice,
-    micron,
-    terpenes,
-    aroma,
-    effects,
-    season,
-    weed_kind,
-    subcategory_id,
-    farm_id,
-    rarity,
-    is_featured,
-    featured_title,
-    is_partner,
-    partner_title,
-  };
-}
-
-function denormalizeCardPayload(payload, tableName) {
-  // payload arrive en schéma "front/bot" (anglais)
-  // On convertit selon la table cible.
-  const isFR = tableName === "cartes";
-  const out = {};
-
-  const name = payload.name ?? payload.nom;
-  const type = payload.type ?? payload.taper;
-  const thc = payload.thc ?? payload.THC;
-  const description = payload.description;
-  const img = payload.img ?? payload.image;
-  const advice = payload.advice ?? payload.conseil;
-  const micron = payload.micron ?? null;
-  const terpenes = payload.terpenes ?? [];
-  const aroma = payload.aroma ?? payload.arome ?? [];
-  const effects = payload.effects ?? [];
-  const season = payload.season ?? payload.saison ?? null;
-
-  const weed_kind = payload.weed_kind ?? payload.type_de_mauvaise_herbe ?? null;
-  const subcategory_id = payload.subcategory_id ?? payload["sous-catégorie_id"] ?? null;
-  const farm_id = payload.farm_id ?? payload["ferme_id"] ?? null;
-
-  if (isFR) {
-    out.nom = name ?? null;
-    out.taper = type ?? null;
-    out.THC = thc ?? null;
-    out.description = description ?? null;
-    out.image = img ?? null;
-    out.conseil = advice ?? null;
-    out.micron = micron ?? null;
-    out["terpènes"] = terpenes ?? [];
-    out["arôme"] = aroma ?? [];
-    out.effets = effects ?? [];
-    out.saison = season;
-    out.type_de_mauvaise_herbe = weed_kind;
-    out["sous-catégorie_id"] = subcategory_id;
-    out["ferme_id"] = farm_id;
-    // Rare/Partner: gérés par endpoints admin
-  } else {
-    out.name = name ?? null;
-    out.type = type ?? null;
-    out.thc = thc ?? null;
-    out.description = description ?? null;
-    out.img = img ?? null;
-    out.advice = advice ?? null;
-    out.micron = micron ?? null;
-    out.terpenes = terpenes ?? [];
-    out.aroma = aroma ?? [];
-    out.effects = effects ?? [];
-    out.season = season;
-    out.weed_kind = weed_kind;
-    out.subcategory_id = subcategory_id;
-    out.farm_id = farm_id;
-  }
-  return out;
-}
-
-function denormalizeFarmPayload(payload, tableName) {
-  const isFR = tableName === "fermes";
-  const out = {};
-  // on suppose mêmes colonnes (name/country/instagram/website/is_active)
-  // si jamais tu as des noms FR, on garde la compat en double
-  const name = payload.name ?? payload.nom ?? null;
-  if (isFR) {
-    out.name = name;
-    out.country = payload.country ?? payload.pays ?? null;
-    out.instagram = payload.instagram ?? null;
-    out.website = payload.website ?? payload.site ?? null;
-    out.is_active = payload.is_active ?? true;
-  } else {
-    out.name = name;
-    out.country = payload.country ?? null;
-    out.instagram = payload.instagram ?? null;
-    out.website = payload.website ?? null;
-    out.is_active = payload.is_active ?? true;
-  }
-  return out;
-}
-
-// =========================
-// DB: reads (subcategories, farms)
-// =========================
-async function dbListSubcategories() {
-  assertSupabase();
-  return runWithTable(TABLES.subcategories, async (t) => {
-    const { data, error } = await sb.from(t).select("*").eq("is_active", true).order("type", { ascending: true }).order("sort", { ascending: true });
-    if (error) throw error;
-    return data || [];
-  });
-}
-
-async function dbListFarms() {
-  assertSupabase();
-  return runWithTable(TABLES.farms, async (t) => {
-    const { data, error } = await sb.from(t).select("*").eq("is_active", true).order("name", { ascending: true });
-    if (error) throw error;
-    return data || [];
-  });
-}
-
-async function dbInsertFarm(payload) {
-  assertSupabase();
-  return runWithTable(TABLES.farms, async (t) => {
-    const insertPayload = denormalizeFarmPayload(payload, t);
-    const { data, error } = await sb.from(t).insert(insertPayload).select("*").single();
-    if (error) throw error;
-    return data;
-  });
-}
-
-async function getSubcategoriesSafe() {
-  const now = Date.now();
-  if (_cache.subcategories.data.length && now - _cache.subcategories.ts < CACHE_TTL_MS) return _cache.subcategories.data;
-
-  try {
-    const rows = await dbListSubcategories();
-    _cache.subcategories = { ts: now, data: rows };
-    return rows;
-  } catch (e) {
-    _cache.subcategories = { ts: now, data: [] };
-    return [];
-  }
-}
-
-async function getFarmsSafe() {
-  const now = Date.now();
-  if (_cache.farms.data.length && now - _cache.farms.ts < CACHE_TTL_MS) return _cache.farms.data;
-
-  try {
-    const rows = await dbListFarms();
-    _cache.farms = { ts: now, data: rows };
-    return rows;
-  } catch (e) {
-    _cache.farms = { ts: now, data: [] };
-    return [];
-  }
-}
-
-app.get("/api/subcategories", async (req, res) => {
-  try {
-    const rows = await getSubcategoriesSafe();
-    res.json(rows);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get("/api/farms", async (req, res) => {
-  try {
-    const rows = await getFarmsSafe();
-    res.json(rows);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+app.get("/api/subcategories", (req, res) => res.json(SUBCATEGORIES));
 
 // =========================
 // Helpers
@@ -386,53 +123,40 @@ const typeLabel = (t) => ({ hash: "Hash", weed: "Weed", extraction: "Extraction"
 const weedKindLabel = (k) => ({ indica: "Indica", sativa: "Sativa", hybrid: "Hybrid" }[k] || k);
 
 // =========================
-// DB: cards CRUD (normalisé)
+// DB HELPERS
 // =========================
 async function dbListCards() {
   assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const { data, error } = await sb.from(t).select("*").order("id", { ascending: true });
-    if (error) throw error;
-    return (data || []).map(normalizeCardRow).filter(Boolean);
-  });
+  const { data, error } = await sb.from("cards").select("*").order("id", { ascending: true });
+  if (error) throw error;
+  return data || [];
 }
 
 async function dbGetCard(id) {
   assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const { data, error } = await sb.from(t).select("*").eq("id", id).maybeSingle();
-    if (error) throw error;
-    return normalizeCardRow(data);
-  });
+  const { data, error } = await sb.from("cards").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data || null;
 }
 
 async function dbInsertCard(payload) {
   assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const insertPayload = denormalizeCardPayload(payload, t);
-    const { data, error } = await sb.from(t).insert(insertPayload).select("*").single();
-    if (error) throw error;
-    return normalizeCardRow(data);
-  });
+  const { data, error } = await sb.from("cards").insert(payload).select("*").single();
+  if (error) throw error;
+  return data;
 }
 
 async function dbUpdateCard(id, patch) {
   assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const updatePayload = denormalizeCardPayload(patch, t);
-    const { data, error } = await sb.from(t).update(updatePayload).eq("id", id).select("*").single();
-    if (error) throw error;
-    return normalizeCardRow(data);
-  });
+  const { data, error } = await sb.from("cards").update(patch).eq("id", id).select("*").single();
+  if (error) throw error;
+  return data;
 }
 
 async function dbDeleteCard(id) {
   assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const { error } = await sb.from(t).delete().eq("id", id);
-    if (error) throw error;
-    return true;
-  });
+  const { error } = await sb.from("cards").delete().eq("id", id);
+  if (error) throw error;
 }
 
 // =========================
@@ -440,118 +164,50 @@ async function dbDeleteCard(id) {
 // =========================
 async function dbGetFeatured() {
   assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const isFR = t === "cartes";
-    const col = isFR ? "est_mis_en_avant" : "is_featured";
-    const { data, error } = await sb.from(t).select("*").eq(col, true).order("id", { ascending: false }).limit(1).maybeSingle();
-    if (error) throw error;
-    return normalizeCardRow(data);
-  });
+  const { data, error } = await sb
+    .from("cards")
+    .select("*")
+    .eq("is_featured", true)
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
 }
 
 async function dbSetFeatured(id, title) {
   assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const isFR = t === "cartes";
-    const flag = isFR ? "est_mis_en_avant" : "is_featured";
-    const titleCol = isFR ? "titre_vedette" : "featured_title";
 
-    const { error: e1 } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
-    if (e1) throw e1;
+  const { error: e1 } = await sb
+    .from("cards")
+    .update({ is_featured: false, featured_title: null })
+    .eq("is_featured", true);
+  if (e1) throw e1;
 
-    const patch = { [flag]: true, [titleCol]: title || "✨ Rare du moment" };
-    const { data, error: e2 } = await sb.from(t).update(patch).eq("id", id).select("*").single();
-    if (e2) throw e2;
+  const patch = { is_featured: true, featured_title: title || "✨ Shiny du moment" };
+  const { data, error: e2 } = await sb.from("cards").update(patch).eq("id", id).select("*").single();
+  if (e2) throw e2;
 
-    return normalizeCardRow(data);
-  });
+  return data;
 }
 
 async function dbUnsetFeatured() {
   assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const isFR = t === "cartes";
-    const flag = isFR ? "est_mis_en_avant" : "is_featured";
-    const titleCol = isFR ? "titre_vedette" : "featured_title";
-    const { error } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
-    if (error) throw error;
-    return true;
-  });
+  const { error } = await sb
+    .from("cards")
+    .update({ is_featured: false, featured_title: null })
+    .eq("is_featured", true);
+  if (error) throw error;
 }
 
 // =========================
-// PARTNER (Partenaire du moment) — indépendant du Rare
+// API: cards + featured
 // =========================
-async function dbGetPartner() {
-  assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const isFR = t === "cartes";
-    const col = isFR ? "est_partenaire" : "is_partner";
-    const { data, error } = await sb.from(t).select("*").eq(col, true).order("id", { ascending: false }).limit(1).maybeSingle();
-    if (error) throw error;
-    return normalizeCardRow(data);
-  });
-}
-
-async function dbSetPartner(id, title) {
-  assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const isFR = t === "cartes";
-    const flag = isFR ? "est_partenaire" : "is_partner";
-    const titleCol = isFR ? "titre_partenaire" : "partner_title";
-
-    const { error: e1 } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
-    if (e1) throw e1;
-
-    const patch = { [flag]: true, [titleCol]: title || "🤝 Partenaire du moment" };
-    const { data, error: e2 } = await sb.from(t).update(patch).eq("id", id).select("*").single();
-    if (e2) throw e2;
-
-    return normalizeCardRow(data);
-  });
-}
-
-async function dbUnsetPartner() {
-  assertSupabase();
-  return runWithTable(TABLES.cards, async (t) => {
-    const isFR = t === "cartes";
-    const flag = isFR ? "est_partenaire" : "is_partner";
-    const titleCol = isFR ? "titre_partenaire" : "partner_title";
-    const { error } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
-    if (error) throw error;
-    return true;
-  });
-}
-
-// =========================
-// API: cards + featured + partner + farms
-// =========================
-function enrichCardsWithLabels(cards, subcategories, farms) {
-  const subMap = new Map((subcategories || []).map((s) => [String(s.id), s]));
-  const farmMap = new Map((farms || []).map((f) => [String(f.id), f]));
-
-  return (cards || []).map((c) => {
-    const scId = c.subcategory_id ?? null;
-    const sc = scId != null ? subMap.get(String(scId)) : null;
-
-    const farmId = c.farm_id ?? null;
-    const farm = farmId != null ? farmMap.get(String(farmId)) : null;
-
-    return {
-      ...c,
-      subcategory: sc?.label || null,
-      subcategory_type: sc?.type || null,
-      farm: farm
-        ? { id: farm.id, name: farm.name, country: farm.country, instagram: farm.instagram, website: farm.website }
-        : null,
-    };
-  });
-}
-
 app.get("/api/cards", async (req, res) => {
   try {
-    const [cards, subs, farms] = await Promise.all([dbListCards(), getSubcategoriesSafe(), getFarmsSafe()]);
-    res.json(enrichCardsWithLabels(cards, subs, farms));
+    const cards = await dbListCards();
+    const mapped = cards.map((c) => ({ ...c, desc: c.description ?? "—" }));
+    res.json(mapped);
   } catch (e) {
     console.error("❌ /api/cards:", e.message);
     res.status(500).json({ error: "db_error", message: e.message });
@@ -560,43 +216,12 @@ app.get("/api/cards", async (req, res) => {
 
 app.get("/api/featured", async (req, res) => {
   try {
-    const [c, subs, farms] = await Promise.all([dbGetFeatured(), getSubcategoriesSafe(), getFarmsSafe()]);
+    const c = await dbGetFeatured();
     if (!c) return res.json(null);
-    res.json(enrichCardsWithLabels([c], subs, farms)[0]);
+    res.json({ ...c, desc: c.description ?? "—" });
   } catch (e) {
     console.error("❌ /api/featured:", e.message);
     res.status(500).json({ error: "db_error", message: e.message });
-  }
-});
-
-app.get("/api/partner", async (req, res) => {
-  try {
-    const [c, subs, farms] = await Promise.all([dbGetPartner(), getSubcategoriesSafe(), getFarmsSafe()]);
-    if (!c) return res.json(null);
-    res.json(enrichCardsWithLabels([c], subs, farms)[0]);
-  } catch (e) {
-    console.error("❌ /api/partner:", e.message);
-    res.status(500).json({ error: "db_error", message: e.message });
-  }
-});
-
-app.get("/api/farm/:farm_id/cards", async (req, res) => {
-  try {
-    const farm_id = Number(req.params.farm_id);
-    if (!farm_id) return res.status(400).json({ error: "invalid_farm_id" });
-
-    assertSupabase();
-    const cards = await runWithTable(TABLES.cards, async (t) => {
-      const col = t === "cartes" ? "ferme_id" : "farm_id";
-      const { data, error } = await sb.from(t).select("*").eq(col, farm_id).order("id", { ascending: false });
-      if (error) throw error;
-      return (data || []).map(normalizeCardRow).filter(Boolean);
-    });
-
-    const [subs, farms] = await Promise.all([getSubcategoriesSafe(), getFarmsSafe()]);
-    res.json(enrichCardsWithLabels(cards || [], subs, farms));
-  } catch (e) {
-    res.status(500).json({ error: e.message });
   }
 });
 
@@ -609,28 +234,21 @@ app.post("/api/favorite", async (req, res) => {
     const { user_id, card_id } = req.body || {};
     if (!user_id || !card_id) return res.status(400).json({ error: "missing user_id/card_id" });
 
-    const favTable = TABLES.favorites;
-    const cardsTable = TABLES.cards;
-
-    const existing = await runWithTable(favTable, async (t) => {
-      const { data, error } = await sb.from(t).select("id").eq("user_id", user_id).eq("card_id", card_id).maybeSingle();
-      if (error) throw error;
-      return data;
-    });
+    const { data: existing, error: e1 } = await sb
+      .from("favorites")
+      .select("id")
+      .eq("user_id", user_id)
+      .eq("card_id", card_id)
+      .maybeSingle();
+    if (e1) throw e1;
 
     if (existing?.id) {
-      await runWithTable(favTable, async (t) => {
-        const { error } = await sb.from(t).delete().eq("id", existing.id);
-        if (error) throw error;
-        return true;
-      });
+      const { error: e2 } = await sb.from("favorites").delete().eq("id", existing.id);
+      if (e2) throw e2;
       return res.json({ favorited: false });
     } else {
-      await runWithTable(favTable, async (t) => {
-        const { error } = await sb.from(t).insert({ user_id, card_id });
-        if (error) throw error;
-        return true;
-      });
+      const { error: e3 } = await sb.from("favorites").insert({ user_id, card_id });
+      if (e3) throw e3;
       return res.json({ favorited: true });
     }
   } catch (e) {
@@ -643,24 +261,128 @@ app.get("/api/mydex/:user_id", async (req, res) => {
     assertSupabase();
     const user_id = req.params.user_id;
 
-    const favs = await runWithTable(TABLES.favorites, async (t) => {
-      const { data, error } = await sb.from(t).select("card_id").eq("user_id", user_id);
-      if (error) throw error;
-      return data || [];
-    });
+    const { data: favs, error: e1 } = await sb.from("favorites").select("card_id").eq("user_id", user_id);
+    if (e1) throw e1;
 
     const ids = (favs || []).map((f) => f.card_id);
     if (!ids.length) return res.json([]);
 
-    const cards = await runWithTable(TABLES.cards, async (t) => {
-      const { data, error } = await sb.from(t).select("*").in("id", ids).order("id", { ascending: false });
+    const { data: cards, error: e2 } = await sb
+      .from("cards")
+      .select("*")
+      .in("id", ids)
+      .order("created_at", { ascending: false });
+    if (e2) throw e2;
+
+    res.json(cards || []);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// =========================
+// Stats (Popular / Trending / New)
+// - Popular: top cards by favorite count (all time)
+// - Trending: favorites in last 7 days (if favorites.created_at exists; else fallback to popular)
+// - New: cards created recently (if cards.created_at exists; else id desc)
+// =========================
+async function tableHasColumn(tableCandidates, columnName) {
+  assertSupabase();
+  try {
+    await runWithTable(tableCandidates, async (t) => {
+      const { error } = await sb.from(t).select(columnName, { head: true, count: "exact" }).limit(1);
       if (error) throw error;
-      return (data || []).map(normalizeCardRow).filter(Boolean);
+      return true;
     });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-    const [subs, farms] = await Promise.all([getSubcategoriesSafe(), getFarmsSafe()]);
+async function getFavoriteCounts({ days = null } = {}) {
+  assertSupabase();
+  const useWindow = Number(days || 0) > 0;
+  const hasCreatedAt = useWindow ? await tableHasColumn(TABLES.favorites, "created_at") : false;
+  const sinceISO = useWindow ? new Date(Date.now() - days * 864e5).toISOString() : null;
 
-    res.json(enrichCardsWithLabels(cards || [], subs, farms));
+  const rows = await runWithTable(TABLES.favorites, async (t) => {
+    let q = sb.from(t).select("card_id" + (hasCreatedAt ? ",created_at" : ""));
+    if (hasCreatedAt && sinceISO) q = q.gte("created_at", sinceISO);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  });
+
+  const counts = new Map();
+  for (const r of rows) {
+    const id = r.card_id;
+    if (id == null) continue;
+    counts.set(String(id), (counts.get(String(id)) || 0) + 1);
+  }
+  return counts;
+}
+
+async function listCardsWithCounts({ days = null, limit = 20 } = {}) {
+  const [cards, subs, farms, counts] = await Promise.all([
+    dbListCards(),
+    getSubcategoriesSafe(),
+    getFarmsSafe(),
+    getFavoriteCounts(days ? { days } : {}),
+  ]);
+
+  const enriched = enrichCardsWithLabels(cards, subs, farms).map((c) => ({
+    ...c,
+    favorite_count: counts.get(String(c.id)) || 0,
+  }));
+
+  enriched.sort((a, b) => (b.favorite_count - a.favorite_count) || ((Number(b.id)||0) - (Number(a.id)||0)));
+  return enriched.slice(0, Math.max(1, Math.min(50, limit)));
+}
+
+async function listNewestCards({ days = 30, limit = 20 } = {}) {
+  assertSupabase();
+  const hasCreatedAt = await tableHasColumn(TABLES.cards, "created_at");
+  const sinceISO = new Date(Date.now() - days * 864e5).toISOString();
+
+  const cards = await runWithTable(TABLES.cards, async (t) => {
+    let q = sb.from(t).select("*");
+    if (hasCreatedAt) q = q.gte("created_at", sinceISO).order("created_at", { ascending: false });
+    else q = q.order("id", { ascending: false });
+    const { data, error } = await q.limit(limit);
+    if (error) throw error;
+    return (data || []).map(normalizeCardRow).filter(Boolean);
+  });
+
+  const [subs, farms] = await Promise.all([getSubcategoriesSafe(), getFarmsSafe()]);
+  return enrichCardsWithLabels(cards, subs, farms);
+}
+
+app.get("/api/stats/popular", async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit || 20), 50);
+    const out = await listCardsWithCounts({ limit });
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/stats/trending", async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit || 20), 50);
+    const out = await listCardsWithCounts({ days: 7, limit });
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/stats/new", async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit || 20), 50);
+    const out = await listNewestCards({ days: 30, limit });
+    res.json(out);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -709,7 +431,7 @@ function buildStartKeyboard(userId) {
 }
 
 function sendStartMenu(chatId, userId) {
-  const caption = `🧬 *HarvestDex*
+  const caption = `🧬 *PokéTerps / HarvestDex*
 
 Collectionne tes fiches, ajoute-les à *Mon Dex* et explore les catégories 🔥`;
 
@@ -742,49 +464,32 @@ bot.onText(/^\/myid$/, (msg) => {
   bot.sendMessage(msg.chat.id, `✅ user_id = ${msg.from?.id}\n✅ chat_id = ${msg.chat.id}`);
 });
 
-bot.onText(/^\/admin(?:help)?$/, (msg) => {
+bot.onText(/^\/adminhelp$/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from?.id;
   if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
 
   const txt =
-`👑 *Commandes Admin*
+    `👑 *Commandes Admin*
 
-*Ajout / édition*
-• /addform — ajouter une fiche (avec sous-catégorie + farm)
-• /edit id — éditer une fiche
-• /delete id — supprimer une fiche
+✅ /dbtest *(test Supabase)*
+✅ /stat *(stats)*
+✅ /list [hash|weed|extraction|wpff|120u|90u|73u|45u|indica|sativa|hybrid]
+✅ /addform *(ajout guidé)*
+✅ /editform *(modif guidée)*
+✅ /delform *(suppression guidée)*
+✅ /edit id field value
+✅ /del id
 
-*Rare / Legendary*
-• /rare id (titre optionnel)
-• /unrare
-• /rareinfo
-• /legendary id (titre optionnel)
-• /unlegendary
-• /legendaryinfo
+✨ *Rare du moment*
+✅ /rare id (titre optionnel)
+✅ /unrare
+✅ /rareinfo
 
-*Partenaire du moment*
-• /partner id (titre optionnel)
-• /unpartner
-• /partnerinfo
+*fields /edit:* name,type,micron,weed_kind,thc,description,img,advice,terpenes,aroma,effects`;
 
-*Debug*
-• /ping
-• /stats`;
-
-  return bot.sendMessage(chatId, txt, {
-    parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "➕ Ajouter (addform)", callback_data: "menu_addform" }],
-        [{ text: "✨ Rare du moment", callback_data: "menu_rare" }, { text: "👑 Legendary", callback_data: "menu_legendary" }],
-        [{ text: "🤝 Partenaire", callback_data: "menu_partner" }],
-        [{ text: "📊 Stats", callback_data: "menu_stats" }],
-      ],
-    },
-  });
+  bot.sendMessage(chatId, txt, { parse_mode: "Markdown" });
 });
-
 
 bot.onText(/^\/dbtest$/, async (msg) => {
   const chatId = msg.chat.id;
@@ -888,62 +593,6 @@ bot.onText(/^\/rareinfo$/, async (msg) => {
     bot.sendMessage(chatId, `❌ /rareinfo: ${e.message}`);
   }
 });
-
-
-// =========================
-// PARTNER commands
-// =========================
-bot.onText(/^\/partner\s+(\d+)(?:\s+([\s\S]+))?$/m, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
-  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    const id = Number(match[1]);
-    const title = (match[2] || "").trim();
-
-    const card = await dbGetCard(id);
-    if (!card) return bot.sendMessage(chatId, "❌ ID introuvable.");
-
-    const updated = await dbSetPartner(id, title || "🤝 Partenaire du moment");
-
-    bot.sendMessage(
-      chatId,
-      `🤝 *Partenaire du moment activé !*\n\n#${updated.id} — *${updated.name}*\nTitre: *${updated.partner_title || "🤝 Partenaire du moment"}*`,
-      { parse_mode: "Markdown" }
-    );
-  } catch (e) {
-    bot.sendMessage(chatId, `❌ /partner: ${e.message}`);
-  }
-});
-
-bot.onText(/^\/unpartner$/, async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
-  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    await dbUnsetPartner();
-    bot.sendMessage(chatId, "✅ Partenaire désactivé.");
-  } catch (e) {
-    bot.sendMessage(chatId, `❌ /unpartner: ${e.message}`);
-  }
-});
-
-bot.onText(/^\/partnerinfo$/, async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
-  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    const c = await dbGetPartner();
-    if (!c) return bot.sendMessage(chatId, "ℹ️ Aucun partenaire actif.");
-    bot.sendMessage(chatId, `🤝 Partenaire actif: #${c.id} — ${c.name}\nTitre: ${c.partner_title || "🤝 Partenaire du moment"}`);
-  } catch (e) {
-    bot.sendMessage(chatId, `❌ /partnerinfo: ${e.message}`);
-  }
-});
-
 
 // =========================
 // list / edit / del commands
@@ -1079,7 +728,7 @@ function delCancel(chatId) {
 }
 
 function askType(chatId) {
-  bot.sendMessage(chatId, "2/12 — Choisis la *catégorie* :", {
+  bot.sendMessage(chatId, "2/10 — Choisis la *catégorie* :", {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
@@ -1092,7 +741,7 @@ function askType(chatId) {
 }
 
 function askMicron(chatId) {
-  bot.sendMessage(chatId, "3/12 — Choisis le *micron* :", {
+  bot.sendMessage(chatId, "3/10 — Choisis le *micron* :", {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
@@ -1106,7 +755,7 @@ function askMicron(chatId) {
 }
 
 function askWeedKind(chatId) {
-  bot.sendMessage(chatId, "3/12 — Choisis *indica / sativa / hybrid* :", {
+  bot.sendMessage(chatId, "3/10 — Choisis *indica / sativa / hybrid* :", {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
@@ -1115,51 +764,6 @@ function askWeedKind(chatId) {
         [{ text: "❌ Annuler", callback_data: "add_cancel" }],
       ],
     },
-  });
-}
-
-
-async function askSubcategory(chatId, type) {
-  const t = String(type || "").toLowerCase();
-  const subs = (await getSubcategoriesSafe()).filter((s) => String(s.type).toLowerCase() === t);
-
-  const buttons = [];
-  const chunks = subs.slice(0, 24); // sécurité
-  for (let i = 0; i < chunks.length; i += 2) {
-    const row = [];
-    row.push({ text: chunks[i].label, callback_data: `add_sub_${chunks[i].id}` });
-    if (chunks[i + 1]) row.push({ text: chunks[i + 1].label, callback_data: `add_sub_${chunks[i + 1].id}` });
-    buttons.push(row);
-  }
-  buttons.push([{ text: "Aucune", callback_data: "add_sub_none" }]);
-  buttons.push([{ text: "❌ Annuler", callback_data: "add_cancel" }]);
-
-  bot.sendMessage(chatId, "4/12 — Choisis la *sous-catégorie* :", {
-    parse_mode: "Markdown",
-    reply_markup: { inline_keyboard: buttons },
-  });
-}
-
-async function askFarm(chatId) {
-  const farms = await getFarmsSafe();
-  const buttons = [];
-
-  // affiche les 20 premières (triées)
-  const list = farms.slice(0, 20);
-  for (let i = 0; i < list.length; i += 2) {
-    const row = [];
-    row.push({ text: list[i].name, callback_data: `add_farm_${list[i].id}` });
-    if (list[i + 1]) row.push({ text: list[i + 1].name, callback_data: `add_farm_${list[i + 1].id}` });
-    buttons.push(row);
-  }
-
-  buttons.push([{ text: "➕ Nouvelle farm", callback_data: "add_farm_new" }]);
-  buttons.push([{ text: "Aucune", callback_data: "add_farm_none" }]);
-  buttons.push([{ text: "❌ Annuler", callback_data: "add_cancel" }]);
-
-  bot.sendMessage(chatId, "5/12 — Choisis la *farm* (ou crée-la) :", {
-    parse_mode: "Markdown",
-    reply_markup: { inline_keyboard: buttons },
   });
 }
 
@@ -1180,8 +784,6 @@ async function addFinish(chatId) {
     aroma: csvToArr(d.aroma || ""),
     effects: csvToArr(d.effects || ""),
     advice: d.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
-    subcategory_id: d.subcategory_id || null,
-    farm_id: d.farm_id || null,
     micron: null,
     weed_kind: null,
   };
@@ -1195,11 +797,6 @@ async function addFinish(chatId) {
   }
 
   const card = await dbInsertCard(payload);
-  const subs = await getSubcategoriesSafe();
-  const farms = await getFarmsSafe();
-  const sc = card.subcategory_id != null ? subs.find((s) => String(s.id) === String(card.subcategory_id)) : null;
-  const fm = card.farm_id != null ? farms.find((f) => String(f.id) === String(card.farm_id)) : null;
-
   addWizard.delete(chatId);
 
   const extra =
@@ -1215,8 +812,6 @@ async function addFinish(chatId) {
     `✅ *Fiche ajoutée !*\n\n` +
     `#${card.id} — *${card.name}*\n` +
     `Catégorie: *${typeLabel(card.type)}${extra}*\n` +
-    `${sc ? `Sous-catégorie: *${sc.label}*\n` : ""}` +
-    `${fm ? `Farm: *${fm.name}*\n` : ""}` +
     `${card.thc}\n\n` +
     `🧬 ${card.description}\n` +
     `🌿 Terpènes: ${card.terpenes?.length ? card.terpenes.join(", ") : "—"}\n` +
@@ -1235,7 +830,7 @@ bot.onText(/^\/addform$/, (msg) => {
   addWizard.set(chatId, { step: "name", data: {} });
   bot.sendMessage(
     chatId,
-    "📝 *Ajout d'une fiche* (formulaire)\n\n1/12 — Envoie le *nom*.\nEx: `Static Hash Premium`",
+    "📝 *Ajout d'une fiche* (formulaire)\n\n1/10 — Envoie le *nom*.\nEx: `Static Hash Premium`",
     {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
@@ -1299,7 +894,7 @@ bot.on("callback_query", async (query) => {
   if (data === "menu_info") {
     const caption =
       `ℹ️ *Informations*\n\n` +
-      `HarvestDex est un projet éducatif.\n` +
+      `PokéTerps / HarvestDex est un projet éducatif.\n` +
       `Tu peux consulter les fiches, les terpènes, les arômes et les effets.\n\n` +
       `⚠️ *Disclaimer*\n` +
       `• Aucune vente ici.\n` +
@@ -1365,36 +960,10 @@ bot.on("callback_query", async (query) => {
 
   if (data === "menu_admin") {
     if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, "🧰 Admin: tape /admin pour voir toutes les commandes.", {
+    return bot.sendMessage(chatId, "🧰 Admin: utilise /adminhelp", {
       reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_back" }]] },
     });
-  
-  if (data === "menu_addform") {
-    if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, "➕ Pour ajouter une fiche : utilise /addform (assistant guidé).");
   }
-
-  if (data === "menu_rare") {
-    if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, `✨ Rare du moment :\n• /rare id (titre optionnel)\n• /unrare\n• /rareinfo`);
-  }
-
-  if (data === "menu_legendary") {
-    if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, `👑 Legendary :\n• /legendary id (titre optionnel)\n• /unlegendary\n• /legendaryinfo`);
-  }
-
-  if (data === "menu_partner") {
-    if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, `🤝 Partenaire du moment :\n• /partner id (titre optionnel)\n• /unpartner\n• /partnerinfo`);
-  }
-
-  if (data === "menu_stats") {
-    if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, "📊 Stats : /stats");
-  }
-
-}
 
   // ===== WIZARDS =====
   if (isAdminUser(userId) && data === "add_cancel") return addCancel(chatId);
@@ -1428,10 +997,13 @@ bot.on("callback_query", async (query) => {
 
     state.data.weed_kind = k;
     state.data.micron = "";
-    state.step = "subcategory";
+    state.step = "thc";
     addWizard.set(chatId, state);
 
-    return askSubcategory(chatId, state.data.type);
+    return bot.sendMessage(chatId, "4/10 — Envoie le *THC* (ex: `THC: 20–26%`).", {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
+    });
   }
 
   if (isAdminUser(userId) && data.startsWith("add_micron_")) {
@@ -1441,68 +1013,16 @@ bot.on("callback_query", async (query) => {
     const m = data.replace("add_micron_", "");
     state.data.micron = m === "none" ? "" : m;
     state.data.weed_kind = null;
-    state.step = "subcategory";
-    addWizard.set(chatId, state);
-
-    return askSubcategory(chatId, state.data.type);
-  }
-
-  
-  if (isAdminUser(userId) && (data === "add_sub_none" || data.startsWith("add_sub_"))) {
-    const state = addWizard.get(chatId);
-    if (!state) return;
-
-    const sc = data === "add_sub_none" ? null : data.replace("add_sub_", "");
-    state.data.subcategory_id = sc || null;
-    state.step = "farm";
-    addWizard.set(chatId, state);
-
-    return askFarm(chatId);
-  }
-
-  if (isAdminUser(userId) && data === "add_farm_none") {
-    const state = addWizard.get(chatId);
-    if (!state) return;
-
-    state.data.farm_id = null;
     state.step = "thc";
     addWizard.set(chatId, state);
 
-    return bot.sendMessage(chatId, "6/12 — Envoie le *THC* (ex: `THC: 35–55%`).", {
+    return bot.sendMessage(chatId, "4/10 — Envoie le *THC* (ex: `THC: 35–55%`).", {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
     });
   }
 
-  if (isAdminUser(userId) && data === "add_farm_new") {
-    const state = addWizard.get(chatId);
-    if (!state) return;
-
-    state.step = "farm_name";
-    addWizard.set(chatId, state);
-
-    return bot.sendMessage(chatId, "5/12 — Envoie le *nom de la farm*.", {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
-    });
-  }
-
-  if (isAdminUser(userId) && data.startsWith("add_farm_")) {
-    const state = addWizard.get(chatId);
-    if (!state) return;
-
-    const fid = Number(data.replace("add_farm_", ""));
-    state.data.farm_id = fid || null;
-    state.step = "thc";
-    addWizard.set(chatId, state);
-
-    return bot.sendMessage(chatId, "6/12 — Envoie le *THC* (ex: `THC: 35–55%`).", {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
-    });
-  }
-
-if (isAdminUser(userId) && data === "edit_cancel") return editCancel(chatId);
+  if (isAdminUser(userId) && data === "edit_cancel") return editCancel(chatId);
   if (isAdminUser(userId) && data === "del_cancel") return delCancel(chatId);
 
   if (isAdminUser(userId) && data.startsWith("del_pick_")) {
@@ -1722,95 +1242,46 @@ bot.on("message", async (msg) => {
       return askType(chatId);
     }
 
-    if (addState.step === "farm_name") {
-      addState.data.farm_name = text;
-      addState.step = "farm_country";
-      addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "6/12 — Pays (ex: `Suisse`) ou `-`", { parse_mode: "Markdown" });
-    }
-
-    if (addState.step === "farm_country") {
-      addState.data.farm_country = text === "-" ? "" : text;
-      addState.step = "farm_instagram";
-      addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "7/12 — Instagram (username ou URL) ou `-`", { parse_mode: "Markdown" });
-    }
-
-    if (addState.step === "farm_instagram") {
-      addState.data.farm_instagram = text === "-" ? "" : text;
-      addState.step = "farm_website";
-      addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "8/12 — Website (URL) ou `-`", { parse_mode: "Markdown" });
-    }
-
-    if (addState.step === "farm_website") {
-      addState.data.farm_website = text === "-" ? "" : text;
-
-      try {
-        const payload = {
-          name: addState.data.farm_name,
-          country: addState.data.farm_country || null,
-          instagram: addState.data.farm_instagram || null,
-          website: addState.data.farm_website || null,
-          is_active: true,
-        };
-        const created = await dbInsertFarm(payload);
-
-        // update cache to show it immediately next time
-        _cache.farms = { ts: Date.now(), data: [...(_cache.farms.data || []), created] };
-
-        addState.data.farm_id = created.id;
-        addState.step = "thc";
-        addWizard.set(chatId, addState);
-
-        return bot.sendMessage(chatId, "9/12 — Envoie le *THC* (ex: `THC: 35–55%`).", { parse_mode: "Markdown" });
-      } catch (e) {
-        addWizard.delete(chatId);
-        return bot.sendMessage(chatId, `❌ Création farm KO: ${e.message}`);
-      }
-    }
-
-
     if (addState.step === "thc") {
       addState.data.thc = text;
       addState.step = "description";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "7/12 — Envoie la *description*.", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "5/10 — Envoie la *description*.", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "description") {
       addState.data.description = text;
       addState.step = "terpenes";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "8/12 — Terpènes (virgules) ou `-`", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "6/10 — Terpènes (virgules) ou `-`", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "terpenes") {
       addState.data.terpenes = text === "-" ? "" : text;
       addState.step = "aroma";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "9/12 — Arômes (virgules) ou `-`", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "7/10 — Arômes (virgules) ou `-`", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "aroma") {
       addState.data.aroma = text === "-" ? "" : text;
       addState.step = "effects";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "10/12 — Effets (virgules) ou `-`", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "8/10 — Effets (virgules) ou `-`", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "effects") {
       addState.data.effects = text === "-" ? "" : text;
       addState.step = "advice";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "11/12 — Conseils / warning", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "9/10 — Conseils / warning", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "advice") {
       addState.data.advice = text;
       addState.step = "img";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "12/12 — Image URL (ou `-`)", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "10/10 — Image URL (ou `-`)", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "img") {
