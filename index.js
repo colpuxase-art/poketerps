@@ -58,9 +58,12 @@ const ADMIN_IDS = new Set([6675436692]); // ✅ TON USER ID
 const isAdminUser = (userId) => ADMIN_IDS.has(Number(userId));
 
 // =========================
-// Subcategories (app + bot)
+// Subcategories + Farms (DB-first)
 // =========================
-const SUBCATEGORIES = [
+
+// ⚠️ Fallback uniquement si la table `subcategories` n'existe pas encore.
+// (utile pour booter le projet en dev)
+const DEFAULT_SUBCATEGORIES = [
   // HASH
   { id: "dry_sift", type: "hash", label: "Dry Sift", sort: 10 },
   { id: "static_sift", type: "hash", label: "Static Sift", sort: 15 },
@@ -101,7 +104,80 @@ const SUBCATEGORIES = [
   { id: "wpff_full_spectrum", type: "wpff", label: "Full Spectrum", sort: 30 },
 ];
 
-app.get("/api/subcategories", (req, res) => res.json(SUBCATEGORIES));
+// Cache simple (évite de spammer la DB)
+const _cache = {
+  subcategories: { ts: 0, data: [] },
+  farms: { ts: 0, data: [] },
+};
+const CACHE_TTL_MS = 60_000;
+
+async function dbListSubcategories() {
+  assertSupabase();
+  const { data, error } = await sb.from("subcategories").select("*").order("type", { ascending: true }).order("sort", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+async function dbListFarms() {
+  assertSupabase();
+  const { data, error } = await sb.from("farms").select("*").eq("is_active", true).order("name", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+async function dbInsertFarm(payload) {
+  assertSupabase();
+  const { data, error } = await sb.from("farms").insert(payload).select("*").single();
+  if (error) throw error;
+  return data;
+}
+
+async function getSubcategoriesSafe() {
+  const now = Date.now();
+  if (_cache.subcategories.data.length && now - _cache.subcategories.ts < CACHE_TTL_MS) return _cache.subcategories.data;
+
+  try {
+    const rows = await dbListSubcategories();
+    _cache.subcategories = { ts: now, data: rows };
+    return rows;
+  } catch (e) {
+    // fallback si table pas prête
+    _cache.subcategories = { ts: now, data: DEFAULT_SUBCATEGORIES };
+    return DEFAULT_SUBCATEGORIES;
+  }
+}
+
+async function getFarmsSafe() {
+  const now = Date.now();
+  if (_cache.farms.data.length && now - _cache.farms.ts < CACHE_TTL_MS) return _cache.farms.data;
+
+  try {
+    const rows = await dbListFarms();
+    _cache.farms = { ts: now, data: rows };
+    return rows;
+  } catch (e) {
+    _cache.farms = { ts: now, data: [] };
+    return [];
+  }
+}
+
+app.get("/api/subcategories", async (req, res) => {
+  try {
+    const rows = await getSubcategoriesSafe();
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/farms", async (req, res) => {
+  try {
+    const rows = await getFarmsSafe();
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // =========================
 // Helpers
@@ -200,14 +276,82 @@ async function dbUnsetFeatured() {
   if (error) throw error;
 }
 
+
 // =========================
-// API: cards + featured
+// PARTNER (Partenaire du moment) — indépendant du Rare
 // =========================
+async function dbGetPartner() {
+  assertSupabase();
+  const { data, error } = await sb
+    .from("cards")
+    .select("*")
+    .eq("is_partner", true)
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function dbSetPartner(id, title) {
+  assertSupabase();
+
+  const { error: e1 } = await sb
+    .from("cards")
+    .update({ is_partner: false, partner_title: null })
+    .eq("is_partner", true);
+  if (e1) throw e1;
+
+  const patch = { is_partner: true, partner_title: title || "🤝 Partenaire du moment" };
+  const { data, error: e2 } = await sb.from("cards").update(patch).eq("id", id).select("*").single();
+  if (e2) throw e2;
+
+  return data;
+}
+
+async function dbUnsetPartner() {
+  assertSupabase();
+  const { error } = await sb
+    .from("cards")
+    .update({ is_partner: false, partner_title: null })
+    .eq("is_partner", true);
+  if (error) throw error;
+}
+
+// =========================
+// API: cards + featured + partner + farms
+// =========================
+
+function enrichCardsWithLabels(cards, subcategories, farms) {
+  const subMap = new Map((subcategories || []).map((s) => [String(s.id), s]));
+  const farmMap = new Map((farms || []).map((f) => [String(f.id), f]));
+
+  return (cards || []).map((c) => {
+    const scId = c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null;
+    const sc = scId != null ? subMap.get(String(scId)) : null;
+
+    const farmId = c.farm_id ?? null;
+    const farm = farmId != null ? farmMap.get(String(farmId)) : null;
+
+    return {
+      ...c,
+      desc: c.description ?? "—",
+      // mapping propre
+      subcategory_id: scId,
+      subcategory_label: sc?.label || null,
+      subcategory_type: sc?.type || null,
+      farm_id: farmId,
+      farm: farm
+        ? { id: farm.id, name: farm.name, country: farm.country, instagram: farm.instagram, website: farm.website }
+        : null,
+    };
+  });
+}
+
 app.get("/api/cards", async (req, res) => {
   try {
-    const cards = await dbListCards();
-    const mapped = cards.map((c) => ({ ...c, desc: c.description ?? "—" }));
-    res.json(mapped);
+    const [cards, subs, farms] = await Promise.all([dbListCards(), getSubcategoriesSafe(), getFarmsSafe()]);
+    res.json(enrichCardsWithLabels(cards, subs, farms));
   } catch (e) {
     console.error("❌ /api/cards:", e.message);
     res.status(500).json({ error: "db_error", message: e.message });
@@ -216,17 +360,45 @@ app.get("/api/cards", async (req, res) => {
 
 app.get("/api/featured", async (req, res) => {
   try {
-    const c = await dbGetFeatured();
+    const [c, subs, farms] = await Promise.all([dbGetFeatured(), getSubcategoriesSafe(), getFarmsSafe()]);
     if (!c) return res.json(null);
-    res.json({ ...c, desc: c.description ?? "—" });
+    res.json(enrichCardsWithLabels([c], subs, farms)[0]);
   } catch (e) {
     console.error("❌ /api/featured:", e.message);
     res.status(500).json({ error: "db_error", message: e.message });
   }
 });
 
+app.get("/api/partner", async (req, res) => {
+  try {
+    const [c, subs, farms] = await Promise.all([dbGetPartner(), getSubcategoriesSafe(), getFarmsSafe()]);
+    if (!c) return res.json(null);
+    res.json(enrichCardsWithLabels([c], subs, farms)[0]);
+  } catch (e) {
+    console.error("❌ /api/partner:", e.message);
+    res.status(500).json({ error: "db_error", message: e.message });
+  }
+});
+
+app.get("/api/farm/:farm_id/cards", async (req, res) => {
+  try {
+    const farm_id = Number(req.params.farm_id);
+    if (!farm_id) return res.status(400).json({ error: "invalid_farm_id" });
+
+    assertSupabase();
+    const { data: cards, error } = await sb.from("cards").select("*").eq("farm_id", farm_id).order("id", { ascending: false });
+    if (error) throw error;
+
+    const [subs, farms] = await Promise.all([getSubcategoriesSafe(), getFarmsSafe()]);
+    res.json(enrichCardsWithLabels(cards || [], subs, farms));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // =========================
 // Favorites (Mon Dex)
+// =========================
 // =========================
 app.post("/api/favorite", async (req, res) => {
   try {
@@ -274,7 +446,9 @@ app.get("/api/mydex/:user_id", async (req, res) => {
       .order("created_at", { ascending: false });
     if (e2) throw e2;
 
-    res.json(cards || []);
+    const [subs, farms] = await Promise.all([getSubcategoriesSafe(), getFarmsSafe()]);
+
+    res.json(enrichCardsWithLabels(cards || [], subs, farms));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -377,6 +551,11 @@ bot.onText(/^\/adminhelp$/, (msg) => {
 ✅ /rare id (titre optionnel)
 ✅ /unrare
 ✅ /rareinfo
+
+🤝 *Partenaire du moment*
+✅ /partner id (titre optionnel)
+✅ /unpartner
+✅ /partnerinfo
 
 *fields /edit:* name,type,micron,weed_kind,thc,description,img,advice,terpenes,aroma,effects`;
 
@@ -485,6 +664,62 @@ bot.onText(/^\/rareinfo$/, async (msg) => {
     bot.sendMessage(chatId, `❌ /rareinfo: ${e.message}`);
   }
 });
+
+
+// =========================
+// PARTNER commands
+// =========================
+bot.onText(/^\/partner\s+(\d+)(?:\s+([\s\S]+))?$/m, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    const id = Number(match[1]);
+    const title = (match[2] || "").trim();
+
+    const card = await dbGetCard(id);
+    if (!card) return bot.sendMessage(chatId, "❌ ID introuvable.");
+
+    const updated = await dbSetPartner(id, title || "🤝 Partenaire du moment");
+
+    bot.sendMessage(
+      chatId,
+      `🤝 *Partenaire du moment activé !*\n\n#${updated.id} — *${updated.name}*\nTitre: *${updated.partner_title || "🤝 Partenaire du moment"}*`,
+      { parse_mode: "Markdown" }
+    );
+  } catch (e) {
+    bot.sendMessage(chatId, `❌ /partner: ${e.message}`);
+  }
+});
+
+bot.onText(/^\/unpartner$/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    await dbUnsetPartner();
+    bot.sendMessage(chatId, "✅ Partenaire désactivé.");
+  } catch (e) {
+    bot.sendMessage(chatId, `❌ /unpartner: ${e.message}`);
+  }
+});
+
+bot.onText(/^\/partnerinfo$/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    const c = await dbGetPartner();
+    if (!c) return bot.sendMessage(chatId, "ℹ️ Aucun partenaire actif.");
+    bot.sendMessage(chatId, `🤝 Partenaire actif: #${c.id} — ${c.name}\nTitre: ${c.partner_title || "🤝 Partenaire du moment"}`);
+  } catch (e) {
+    bot.sendMessage(chatId, `❌ /partnerinfo: ${e.message}`);
+  }
+});
+
 
 // =========================
 // list / edit / del commands
@@ -620,7 +855,7 @@ function delCancel(chatId) {
 }
 
 function askType(chatId) {
-  bot.sendMessage(chatId, "2/10 — Choisis la *catégorie* :", {
+  bot.sendMessage(chatId, "2/12 — Choisis la *catégorie* :", {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
@@ -633,7 +868,7 @@ function askType(chatId) {
 }
 
 function askMicron(chatId) {
-  bot.sendMessage(chatId, "3/10 — Choisis le *micron* :", {
+  bot.sendMessage(chatId, "3/12 — Choisis le *micron* :", {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
@@ -647,7 +882,7 @@ function askMicron(chatId) {
 }
 
 function askWeedKind(chatId) {
-  bot.sendMessage(chatId, "3/10 — Choisis *indica / sativa / hybrid* :", {
+  bot.sendMessage(chatId, "3/12 — Choisis *indica / sativa / hybrid* :", {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
@@ -656,6 +891,51 @@ function askWeedKind(chatId) {
         [{ text: "❌ Annuler", callback_data: "add_cancel" }],
       ],
     },
+  });
+}
+
+
+async function askSubcategory(chatId, type) {
+  const t = String(type || "").toLowerCase();
+  const subs = (await getSubcategoriesSafe()).filter((s) => String(s.type).toLowerCase() === t);
+
+  const buttons = [];
+  const chunks = subs.slice(0, 24); // sécurité
+  for (let i = 0; i < chunks.length; i += 2) {
+    const row = [];
+    row.push({ text: chunks[i].label, callback_data: `add_sub_${chunks[i].id}` });
+    if (chunks[i + 1]) row.push({ text: chunks[i + 1].label, callback_data: `add_sub_${chunks[i + 1].id}` });
+    buttons.push(row);
+  }
+  buttons.push([{ text: "Aucune", callback_data: "add_sub_none" }]);
+  buttons.push([{ text: "❌ Annuler", callback_data: "add_cancel" }]);
+
+  bot.sendMessage(chatId, "4/12 — Choisis la *sous-catégorie* :", {
+    parse_mode: "Markdown",
+    reply_markup: { inline_keyboard: buttons },
+  });
+}
+
+async function askFarm(chatId) {
+  const farms = await getFarmsSafe();
+  const buttons = [];
+
+  // affiche les 20 premières (triées)
+  const list = farms.slice(0, 20);
+  for (let i = 0; i < list.length; i += 2) {
+    const row = [];
+    row.push({ text: list[i].name, callback_data: `add_farm_${list[i].id}` });
+    if (list[i + 1]) row.push({ text: list[i + 1].name, callback_data: `add_farm_${list[i + 1].id}` });
+    buttons.push(row);
+  }
+
+  buttons.push([{ text: "➕ Nouvelle farm", callback_data: "add_farm_new" }]);
+  buttons.push([{ text: "Aucune", callback_data: "add_farm_none" }]);
+  buttons.push([{ text: "❌ Annuler", callback_data: "add_cancel" }]);
+
+  bot.sendMessage(chatId, "5/12 — Choisis la *farm* (ou crée-la) :", {
+    parse_mode: "Markdown",
+    reply_markup: { inline_keyboard: buttons },
   });
 }
 
@@ -676,6 +956,8 @@ async function addFinish(chatId) {
     aroma: csvToArr(d.aroma || ""),
     effects: csvToArr(d.effects || ""),
     advice: d.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
+    subcategory_id: d.subcategory_id || null,
+    farm_id: d.farm_id || null,
     micron: null,
     weed_kind: null,
   };
@@ -689,6 +971,11 @@ async function addFinish(chatId) {
   }
 
   const card = await dbInsertCard(payload);
+  const subs = await getSubcategoriesSafe();
+  const farms = await getFarmsSafe();
+  const sc = card.subcategory_id != null ? subs.find((s) => String(s.id) === String(card.subcategory_id)) : null;
+  const fm = card.farm_id != null ? farms.find((f) => String(f.id) === String(card.farm_id)) : null;
+
   addWizard.delete(chatId);
 
   const extra =
@@ -704,6 +991,8 @@ async function addFinish(chatId) {
     `✅ *Fiche ajoutée !*\n\n` +
     `#${card.id} — *${card.name}*\n` +
     `Catégorie: *${typeLabel(card.type)}${extra}*\n` +
+    `${sc ? `Sous-catégorie: *${sc.label}*\n` : ""}` +
+    `${fm ? `Farm: *${fm.name}*\n` : ""}` +
     `${card.thc}\n\n` +
     `🧬 ${card.description}\n` +
     `🌿 Terpènes: ${card.terpenes?.length ? card.terpenes.join(", ") : "—"}\n` +
@@ -722,7 +1011,7 @@ bot.onText(/^\/addform$/, (msg) => {
   addWizard.set(chatId, { step: "name", data: {} });
   bot.sendMessage(
     chatId,
-    "📝 *Ajout d'une fiche* (formulaire)\n\n1/10 — Envoie le *nom*.\nEx: `Static Hash Premium`",
+    "📝 *Ajout d'une fiche* (formulaire)\n\n1/12 — Envoie le *nom*.\nEx: `Static Hash Premium`",
     {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
@@ -889,13 +1178,10 @@ bot.on("callback_query", async (query) => {
 
     state.data.weed_kind = k;
     state.data.micron = "";
-    state.step = "thc";
+    state.step = "subcategory";
     addWizard.set(chatId, state);
 
-    return bot.sendMessage(chatId, "4/10 — Envoie le *THC* (ex: `THC: 20–26%`).", {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
-    });
+    return askSubcategory(chatId, state.data.type);
   }
 
   if (isAdminUser(userId) && data.startsWith("add_micron_")) {
@@ -905,16 +1191,68 @@ bot.on("callback_query", async (query) => {
     const m = data.replace("add_micron_", "");
     state.data.micron = m === "none" ? "" : m;
     state.data.weed_kind = null;
+    state.step = "subcategory";
+    addWizard.set(chatId, state);
+
+    return askSubcategory(chatId, state.data.type);
+  }
+
+  
+  if (isAdminUser(userId) && (data === "add_sub_none" || data.startsWith("add_sub_"))) {
+    const state = addWizard.get(chatId);
+    if (!state) return;
+
+    const sc = data === "add_sub_none" ? null : data.replace("add_sub_", "");
+    state.data.subcategory_id = sc || null;
+    state.step = "farm";
+    addWizard.set(chatId, state);
+
+    return askFarm(chatId);
+  }
+
+  if (isAdminUser(userId) && data === "add_farm_none") {
+    const state = addWizard.get(chatId);
+    if (!state) return;
+
+    state.data.farm_id = null;
     state.step = "thc";
     addWizard.set(chatId, state);
 
-    return bot.sendMessage(chatId, "4/10 — Envoie le *THC* (ex: `THC: 35–55%`).", {
+    return bot.sendMessage(chatId, "6/12 — Envoie le *THC* (ex: `THC: 35–55%`).", {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
     });
   }
 
-  if (isAdminUser(userId) && data === "edit_cancel") return editCancel(chatId);
+  if (isAdminUser(userId) && data === "add_farm_new") {
+    const state = addWizard.get(chatId);
+    if (!state) return;
+
+    state.step = "farm_name";
+    addWizard.set(chatId, state);
+
+    return bot.sendMessage(chatId, "5/12 — Envoie le *nom de la farm*.", {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
+    });
+  }
+
+  if (isAdminUser(userId) && data.startsWith("add_farm_")) {
+    const state = addWizard.get(chatId);
+    if (!state) return;
+
+    const fid = Number(data.replace("add_farm_", ""));
+    state.data.farm_id = fid || null;
+    state.step = "thc";
+    addWizard.set(chatId, state);
+
+    return bot.sendMessage(chatId, "6/12 — Envoie le *THC* (ex: `THC: 35–55%`).", {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "❌ Annuler", callback_data: "add_cancel" }]] },
+    });
+  }
+
+if (isAdminUser(userId) && data === "edit_cancel") return editCancel(chatId);
   if (isAdminUser(userId) && data === "del_cancel") return delCancel(chatId);
 
   if (isAdminUser(userId) && data.startsWith("del_pick_")) {
@@ -1134,46 +1472,95 @@ bot.on("message", async (msg) => {
       return askType(chatId);
     }
 
+    if (addState.step === "farm_name") {
+      addState.data.farm_name = text;
+      addState.step = "farm_country";
+      addWizard.set(chatId, addState);
+      return bot.sendMessage(chatId, "6/12 — Pays (ex: `Suisse`) ou `-`", { parse_mode: "Markdown" });
+    }
+
+    if (addState.step === "farm_country") {
+      addState.data.farm_country = text === "-" ? "" : text;
+      addState.step = "farm_instagram";
+      addWizard.set(chatId, addState);
+      return bot.sendMessage(chatId, "7/12 — Instagram (username ou URL) ou `-`", { parse_mode: "Markdown" });
+    }
+
+    if (addState.step === "farm_instagram") {
+      addState.data.farm_instagram = text === "-" ? "" : text;
+      addState.step = "farm_website";
+      addWizard.set(chatId, addState);
+      return bot.sendMessage(chatId, "8/12 — Website (URL) ou `-`", { parse_mode: "Markdown" });
+    }
+
+    if (addState.step === "farm_website") {
+      addState.data.farm_website = text === "-" ? "" : text;
+
+      try {
+        const payload = {
+          name: addState.data.farm_name,
+          country: addState.data.farm_country || null,
+          instagram: addState.data.farm_instagram || null,
+          website: addState.data.farm_website || null,
+          is_active: true,
+        };
+        const created = await dbInsertFarm(payload);
+
+        // update cache to show it immediately next time
+        _cache.farms = { ts: Date.now(), data: [...(_cache.farms.data || []), created] };
+
+        addState.data.farm_id = created.id;
+        addState.step = "thc";
+        addWizard.set(chatId, addState);
+
+        return bot.sendMessage(chatId, "9/12 — Envoie le *THC* (ex: `THC: 35–55%`).", { parse_mode: "Markdown" });
+      } catch (e) {
+        addWizard.delete(chatId);
+        return bot.sendMessage(chatId, `❌ Création farm KO: ${e.message}`);
+      }
+    }
+
+
     if (addState.step === "thc") {
       addState.data.thc = text;
       addState.step = "description";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "5/10 — Envoie la *description*.", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "7/12 — Envoie la *description*.", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "description") {
       addState.data.description = text;
       addState.step = "terpenes";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "6/10 — Terpènes (virgules) ou `-`", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "8/12 — Terpènes (virgules) ou `-`", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "terpenes") {
       addState.data.terpenes = text === "-" ? "" : text;
       addState.step = "aroma";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "7/10 — Arômes (virgules) ou `-`", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "9/12 — Arômes (virgules) ou `-`", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "aroma") {
       addState.data.aroma = text === "-" ? "" : text;
       addState.step = "effects";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "8/10 — Effets (virgules) ou `-`", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "10/12 — Effets (virgules) ou `-`", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "effects") {
       addState.data.effects = text === "-" ? "" : text;
       addState.step = "advice";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "9/10 — Conseils / warning", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "11/12 — Conseils / warning", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "advice") {
       addState.data.advice = text;
       addState.step = "img";
       addWizard.set(chatId, addState);
-      return bot.sendMessage(chatId, "10/10 — Image URL (ou `-`)", { parse_mode: "Markdown" });
+      return bot.sendMessage(chatId, "12/12 — Image URL (ou `-`)", { parse_mode: "Markdown" });
     }
 
     if (addState.step === "img") {
