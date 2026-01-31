@@ -114,16 +114,23 @@ const isAdminUser = (userId) => ADMIN_IDS.has(Number(userId));
 // DB: compat FR/EN (tables + colonnes)
 // =========================
 const TABLES = {
-  cards: ["cartes", "cards"],
-  favorites: ["favoris", "favorites"],
-  farms: ["fermes", "farms"],
+  // ✅ On tente d'abord les noms EN (schema actuel), puis FR (legacy)
+  cards: ["cards", "cartes"],
+  favorites: ["favorites", "favoris"],
+  farms: ["farms", "fermes"],
   subcategories: ["subcategories", "sous-catégories", "sous_categories", "sous-categories"],
-  track: ["track_events", "trackevent", "events"],
 };
 
 function isMissingRelation(err) {
   const m = String(err?.message || "").toLowerCase();
-  return m.includes("does not exist") || m.includes("relation") || m.includes("not found");
+  // Supabase peut renvoyer: "Could not find the table 'public.xxx' in the schema cache"
+  return (
+    m.includes("does not exist") ||
+    m.includes("relation") ||
+    m.includes("not found") ||
+    m.includes("could not find the table") ||
+    m.includes("schema cache")
+  );
 }
 
 async function runWithTable(candidates, fn) {
