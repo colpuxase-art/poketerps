@@ -30,8 +30,9 @@ const SUPPORT_IMAGE_URL =
   process.env.SUPPORT_IMAGE_URL || "https://i.postimg.cc/8C6r8V5p/harvestdex-support.jpg";
 
 // ✅ IMPORTANT Render: webhook recommandé
-// Exemple: WEBHOOK_URL=https://poketerps.onrender.com
-const WEBHOOK_URL = (process.env.WEBHOOK_URL || "").trim();
+// - Tu peux mettre WEBHOOK_URL=https://ton-service.onrender.com
+// - Sinon Render fournit souvent RENDER_EXTERNAL_URL automatiquement
+const WEBHOOK_URL = (process.env.WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL || "").trim();
 
 if (!TOKEN) {
   console.error("❌ BOT_TOKEN manquant.");
@@ -408,6 +409,75 @@ if (WEBHOOK_URL) {
   bot = new TelegramBot(TOKEN, { polling: true });
   console.log("✅ Bot en mode POLLING (pas recommandé sur Render)");
 }
+
+// =========================
+// Telegram hardening (évite crash Render)
+// - 409 getUpdates conflict: arrive si plusieurs instances pollent
+// - 400 can't parse entities: arrive si le Markdown casse (titres/noms etc.)
+// =========================
+function isBlockedOrNotFound(err) {
+  const m = String(err?.message || "").toLowerCase();
+  return m.includes("403") || m.includes("forbidden") || m.includes("blocked") || m.includes("chat not found");
+}
+function isParseEntities(err) {
+  const m = String(err?.message || "").toLowerCase();
+  return m.includes("can't parse entities") || m.includes("impossible d'analyser les entités");
+}
+
+// Log soft errors from polling (si jamais tu es encore en polling)
+bot.on("polling_error", (e) => {
+  console.warn("⚠️ [polling_error]", e?.message || e);
+});
+
+// Patch sendMessage/sendPhoto to NEVER crash on common Telegram errors
+{
+  const _sendMessage = bot.sendMessage.bind(bot);
+  bot.sendMessage = async (chatId, text, opts = {}) => {
+    try {
+      return await _sendMessage(chatId, text, opts);
+    } catch (e) {
+      // Retry without parse_mode if entities fail
+      if (opts?.parse_mode && isParseEntities(e)) {
+        const o = { ...opts };
+        delete o.parse_mode;
+        try {
+          return await _sendMessage(chatId, text, o);
+        } catch (e2) {
+          console.warn("⚠️ sendMessage retry(no parse_mode) failed:", e2?.message || e2);
+          return null;
+        }
+      }
+      if (isBlockedOrNotFound(e)) return null;
+      console.warn("⚠️ sendMessage failed:", e?.message || e);
+      return null;
+    }
+  };
+
+  const _sendPhoto = bot.sendPhoto.bind(bot);
+  bot.sendPhoto = async (chatId, photo, opts = {}) => {
+    try {
+      return await _sendPhoto(chatId, photo, opts);
+    } catch (e) {
+      if (opts?.parse_mode && isParseEntities(e)) {
+        const o = { ...opts };
+        delete o.parse_mode;
+        try {
+          return await _sendPhoto(chatId, photo, o);
+        } catch (e2) {
+          console.warn("⚠️ sendPhoto retry(no parse_mode) failed:", e2?.message || e2);
+          return null;
+        }
+      }
+      if (isBlockedOrNotFound(e)) return null;
+      console.warn("⚠️ sendPhoto failed:", e?.message || e);
+      return null;
+    }
+  };
+}
+
+process.on("unhandledRejection", (reason) => {
+  console.warn("⚠️ UnhandledRejection:", reason?.message || reason);
+});
 
 // =========================
 // /start menu
