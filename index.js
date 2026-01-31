@@ -30,9 +30,9 @@ const SUPPORT_IMAGE_URL =
   process.env.SUPPORT_IMAGE_URL || "https://i.postimg.cc/8C6r8V5p/harvestdex-support.jpg";
 
 // ✅ IMPORTANT Render: webhook recommandé
-// - Tu peux mettre WEBHOOK_URL=https://ton-service.onrender.com
-// - Sinon Render fournit souvent RENDER_EXTERNAL_URL automatiquement
+// Exemple: WEBHOOK_URL=https://poketerps.onrender.com
 const WEBHOOK_URL = (process.env.WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL || "").trim();
+// Sur Render, RENDER_EXTERNAL_URL existe souvent: on l'utilise automatiquement pour éviter le polling et les erreurs 409.
 
 if (!TOKEN) {
   console.error("❌ BOT_TOKEN manquant.");
@@ -282,114 +282,6 @@ app.get("/api/mydex/:user_id", async (req, res) => {
 });
 
 // =========================
-// Stats (Popular / Trending / New)
-// - Popular: top cards by favorite count (all time)
-// - Trending: favorites in last 7 days (if favorites.created_at exists; else fallback to popular)
-// - New: cards created recently (if cards.created_at exists; else id desc)
-// =========================
-async function tableHasColumn(tableCandidates, columnName) {
-  assertSupabase();
-  try {
-    await runWithTable(tableCandidates, async (t) => {
-      const { error } = await sb.from(t).select(columnName, { head: true, count: "exact" }).limit(1);
-      if (error) throw error;
-      return true;
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function getFavoriteCounts({ days = null } = {}) {
-  assertSupabase();
-  const useWindow = Number(days || 0) > 0;
-  const hasCreatedAt = useWindow ? await tableHasColumn(TABLES.favorites, "created_at") : false;
-  const sinceISO = useWindow ? new Date(Date.now() - days * 864e5).toISOString() : null;
-
-  const rows = await runWithTable(TABLES.favorites, async (t) => {
-    let q = sb.from(t).select("card_id" + (hasCreatedAt ? ",created_at" : ""));
-    if (hasCreatedAt && sinceISO) q = q.gte("created_at", sinceISO);
-    const { data, error } = await q;
-    if (error) throw error;
-    return data || [];
-  });
-
-  const counts = new Map();
-  for (const r of rows) {
-    const id = r.card_id;
-    if (id == null) continue;
-    counts.set(String(id), (counts.get(String(id)) || 0) + 1);
-  }
-  return counts;
-}
-
-async function listCardsWithCounts({ days = null, limit = 20 } = {}) {
-  const [cards, subs, farms, counts] = await Promise.all([
-    dbListCards(),
-    getSubcategoriesSafe(),
-    getFarmsSafe(),
-    getFavoriteCounts(days ? { days } : {}),
-  ]);
-
-  const enriched = enrichCardsWithLabels(cards, subs, farms).map((c) => ({
-    ...c,
-    favorite_count: counts.get(String(c.id)) || 0,
-  }));
-
-  enriched.sort((a, b) => (b.favorite_count - a.favorite_count) || ((Number(b.id)||0) - (Number(a.id)||0)));
-  return enriched.slice(0, Math.max(1, Math.min(50, limit)));
-}
-
-async function listNewestCards({ days = 30, limit = 20 } = {}) {
-  assertSupabase();
-  const hasCreatedAt = await tableHasColumn(TABLES.cards, "created_at");
-  const sinceISO = new Date(Date.now() - days * 864e5).toISOString();
-
-  const cards = await runWithTable(TABLES.cards, async (t) => {
-    let q = sb.from(t).select("*");
-    if (hasCreatedAt) q = q.gte("created_at", sinceISO).order("created_at", { ascending: false });
-    else q = q.order("id", { ascending: false });
-    const { data, error } = await q.limit(limit);
-    if (error) throw error;
-    return (data || []).map(normalizeCardRow).filter(Boolean);
-  });
-
-  const [subs, farms] = await Promise.all([getSubcategoriesSafe(), getFarmsSafe()]);
-  return enrichCardsWithLabels(cards, subs, farms);
-}
-
-app.get("/api/stats/popular", async (req, res) => {
-  try {
-    const limit = Math.min(Number(req.query.limit || 20), 50);
-    const out = await listCardsWithCounts({ limit });
-    res.json(out);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get("/api/stats/trending", async (req, res) => {
-  try {
-    const limit = Math.min(Number(req.query.limit || 20), 50);
-    const out = await listCardsWithCounts({ days: 7, limit });
-    res.json(out);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get("/api/stats/new", async (req, res) => {
-  try {
-    const limit = Math.min(Number(req.query.limit || 20), 50);
-    const out = await listNewestCards({ days: 30, limit });
-    res.json(out);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// =========================
 // TELEGRAM BOT (polling/webhook)
 // =========================
 let bot;
@@ -410,74 +302,45 @@ if (WEBHOOK_URL) {
   console.log("✅ Bot en mode POLLING (pas recommandé sur Render)");
 }
 
+
 // =========================
-// Telegram hardening (évite crash Render)
-// - 409 getUpdates conflict: arrive si plusieurs instances pollent
-// - 400 can't parse entities: arrive si le Markdown casse (titres/noms etc.)
+// Safe Telegram send (évite crash Render)
 // =========================
-function isBlockedOrNotFound(err) {
-  const m = String(err?.message || "").toLowerCase();
-  return m.includes("403") || m.includes("forbidden") || m.includes("blocked") || m.includes("chat not found");
-}
-function isParseEntities(err) {
-  const m = String(err?.message || "").toLowerCase();
-  return m.includes("can't parse entities") || m.includes("impossible d'analyser les entités");
+function isParseEntityError(err) {
+  const msg = String(err?.message || "").toLowerCase();
+  return msg.includes("can't parse entities") || msg.includes("impossible d'analyser les entités");
 }
 
-// Log soft errors from polling (si jamais tu es encore en polling)
-bot.on("polling_error", (e) => {
-  console.warn("⚠️ [polling_error]", e?.message || e);
-});
-
-// Patch sendMessage/sendPhoto to NEVER crash on common Telegram errors
-{
-  const _sendMessage = bot.sendMessage.bind(bot);
-  bot.sendMessage = async (chatId, text, opts = {}) => {
-    try {
-      return await _sendMessage(chatId, text, opts);
-    } catch (e) {
-      // Retry without parse_mode if entities fail
-      if (opts?.parse_mode && isParseEntities(e)) {
-        const o = { ...opts };
-        delete o.parse_mode;
-        try {
-          return await _sendMessage(chatId, text, o);
-        } catch (e2) {
-          console.warn("⚠️ sendMessage retry(no parse_mode) failed:", e2?.message || e2);
-          return null;
-        }
-      }
-      if (isBlockedOrNotFound(e)) return null;
-      console.warn("⚠️ sendMessage failed:", e?.message || e);
-      return null;
+async function safeSendMessage(chatId, text, opts = {}) {
+  try {
+    return await bot.sendMessage(chatId, text, opts);
+  } catch (e) {
+    console.warn("⚠️ sendMessage failed:", e.message);
+    if (opts?.parse_mode && isParseEntityError(e)) {
+      const o2 = { ...opts };
+      delete o2.parse_mode;
+      try { return await bot.sendMessage(chatId, text, o2); } catch (e2) { console.warn("⚠️ retry sendMessage failed:", e2.message); }
     }
-  };
-
-  const _sendPhoto = bot.sendPhoto.bind(bot);
-  bot.sendPhoto = async (chatId, photo, opts = {}) => {
-    try {
-      return await _sendPhoto(chatId, photo, opts);
-    } catch (e) {
-      if (opts?.parse_mode && isParseEntities(e)) {
-        const o = { ...opts };
-        delete o.parse_mode;
-        try {
-          return await _sendPhoto(chatId, photo, o);
-        } catch (e2) {
-          console.warn("⚠️ sendPhoto retry(no parse_mode) failed:", e2?.message || e2);
-          return null;
-        }
-      }
-      if (isBlockedOrNotFound(e)) return null;
-      console.warn("⚠️ sendPhoto failed:", e?.message || e);
-      return null;
-    }
-  };
+    return null;
+  }
 }
 
-process.on("unhandledRejection", (reason) => {
-  console.warn("⚠️ UnhandledRejection:", reason?.message || reason);
-});
+async function safeSendPhoto(chatId, photo, opts = {}) {
+  try {
+    return await bot.sendPhoto(chatId, photo, opts);
+  } catch (e) {
+    console.warn("⚠️ sendPhoto failed:", e.message);
+    const caption = opts?.caption ? String(opts.caption) : "—";
+    const o2 = { ...opts };
+    delete o2.caption;
+    await safeSendMessage(chatId, caption, o2);
+    return null;
+  }
+}
+
+bot.on("polling_error", (e) => console.warn("⚠️ polling_error:", e?.message || e));
+process.on("unhandledRejection", (e) => console.warn("⚠️ unhandledRejection:", e?.message || e));
+process.on("uncaughtException", (e) => console.warn("⚠️ uncaughtException:", e?.message || e));
 
 // =========================
 // /start menu
@@ -507,18 +370,14 @@ Collectionne tes fiches, ajoute-les à *Mon Dex* et explore les catégories 🔥
 
   const keyboard = buildStartKeyboard(userId);
 
-  return bot
-    .sendPhoto(chatId, START_IMAGE_URL, {
+  return safeSendPhoto(chatId, START_IMAGE_URL, {
       caption,
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: keyboard },
-    })
-    .catch(() => {
-      return bot.sendMessage(chatId, caption, {
+    }).then((r)=>{ if(r) return r; return safeSendMessage(chatId, caption, {
         parse_mode: "Markdown",
         reply_markup: { inline_keyboard: keyboard },
-      });
-    });
+      }); });
 }
 
 bot.onText(/^\/start$/, (msg) => {

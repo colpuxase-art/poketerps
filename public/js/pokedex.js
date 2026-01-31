@@ -89,30 +89,17 @@
   const featuredCount = $("featuredCount");
   const sparklesWrap = $("sparkles");
 
-  // Partner elements
-  const partnerBox = $("partnerBox");
-  const partnerImg = $("partnerImg");
-  const partnerTitle = $("partnerTitle");
-  const partnerName = $("partnerName");
-  const partnerMeta = $("partnerMeta");
-  const partnerLine = $("partnerLine");
-  const partnerViewBtn = $("partnerViewBtn");
+  // Partner box elements
+const partnerBox = $("partnerBox");
+const partnerImg = $("partnerImg");
+const partnerTitle = $("partnerTitle");
+const partnerName = $("partnerName");
+const partnerMeta = $("partnerMeta");
+const partnerLine = $("partnerLine");
+const partnerViewBtn = $("partnerViewBtn");
 
-  // Farms UI
-  const farmSelect = $("farmSelect");
-  const farmSection = $("farmSection");
-  const farmSearchInput = $("farmSearchInput");
-  const farmClearBtn = $("farmClearBtn");
-  const farmList = $("farmList");
+// MyDex/Profile panels
 
-  // Admin modal
-  const adminBtn = $("adminBtn");
-  const adminModalEl = $("adminModal");
-  const adminCommands = $("adminCommands");
-  const copyAdminBtn = $("copyAdminBtn");
-
-
-  // MyDex/Profile panels
   const myDexList = $("myDexList");
   const myDexEmpty = $("myDexEmpty");
 
@@ -437,15 +424,19 @@
       }
     } else {
       if (activeSub !== "all") {
-        const scId = card.subcategory_id != null ? String(card.subcategory_id) : null;
+        const scId = card.subcategory_id != null ? String(card.subcategory_id) : "";
+        // si pas de subcategory en DB, on ne casse pas le Dex :
         if (scId && scId !== String(activeSub)) return false;
-        // si pas de subcategory_id, soft-filter (on laisse passer)
+        if (!scId) return false;
+        
       }
     }
 
+
+    // Farm filter
     if (activeFarm !== "all") {
-      const fid = card.farm_id != null ? String(card.farm_id) : (card.farm && card.farm.id != null ? String(card.farm.id) : "");
-      if (fid && fid !== String(activeFarm)) return false;
+      const fid = card.farm?.id ?? card.farm_id ?? null;
+      if (String(fid || "") !== String(activeFarm)) return false;
     }
 
     if (showFavOnly) {
@@ -504,14 +495,6 @@
 
   /* ================= RENDER LIST ================= */
   function renderList() {
-    if (activeType === "farm") {
-      if (farmSection) farmSection.style.display = "block";
-      listEl.innerHTML = "";
-      updateBadges();
-      return;
-    } else {
-      if (farmSection) farmSection.style.display = "none";
-    }
     const items = sortCards(pokedex.filter(matchesFilters));
 
     listEl.innerHTML = "";
@@ -535,12 +518,10 @@
       const subTxt = (() => {
         if (norm(c.type) === "weed" && c.weed_kind) return ` • ${weedKindLabel(norm(c.weed_kind))}`;
         // ✅ on n’affiche pas les microns en sous-catégorie, seulement éventuellement subcategory label
-        const scLabel = safeStr(c.subcategory || "").trim();
-        if (c.subcategory_id != null) {
-          const found = (subcategories || []).find(x => String(x.id) === String(c.subcategory_id));
-          return found ? ` • ${found.label}` : (scLabel ? ` • ${scLabel}` : "");
-        }
-        return scLabel ? ` • ${scLabel}` : "";
+        const scId = c.subcategory_id != null ? String(c.subcategory_id) : "";
+        if (!scId) return "";
+        const found = (subcategories || []).find(x => String(x.id) === scId);
+        return found ? ` • ${found.label}` : "";
       })();
 
       btn.innerHTML = `
@@ -581,13 +562,10 @@
       const t = norm(card.type);
       let sub = "";
       if (t === "weed" && card.weed_kind) sub = ` • ${weedKindLabel(norm(card.weed_kind))}`;
-      if (t !== "weed") {
-        if (card.subcategory_id != null) {
-          const found = (subcategories || []).find(x => String(x.id) === String(card.subcategory_id));
-          if (found) sub = ` • ${found.label}`;
-        } else if (card.subcategory) {
-          sub = ` • ${safeStr(card.subcategory)}`;
-        }
+      const scId = card.subcategory_id != null ? String(card.subcategory_id) : "";
+      if (sc && t !== "weed") {
+        const found = (subcategories || []).find(x => x.id === sc);
+        if (found) sub = ` • ${found.label}`;
       }
       // ✅ micron affiché dans la fiche (pas en sous chips)
       const micron = (t !== "weed" && card.micron) ? ` • ${norm(card.micron)}` : "";
@@ -694,53 +672,6 @@
   window.loadMyDex = loadMyDex;
   window.loadProfile = loadProfile;
 
-
-  /* ================= FARMS LIST ================= */
-  function renderFarmList() {
-    if (!farmList) return;
-    farmList.innerHTML = "";
-
-    const q = norm(farmSearchInput?.value || "");
-    const list = (farms || []).filter((f) => {
-      const bag = [f.name, f.country, f.instagram, f.website].map(norm).join(" ");
-      return !q || bag.includes(q);
-    });
-
-    if (!list.length) {
-      const empty = document.createElement("div");
-      empty.className = "text-secondary mt-2";
-      empty.textContent = "Aucune farm trouvée.";
-      farmList.appendChild(empty);
-      return;
-    }
-
-    list.forEach((f) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "list-group-item list-group-item-action bg-black text-white border-secondary";
-      btn.style.borderRadius = "14px";
-      btn.style.marginBottom = "8px";
-      btn.innerHTML = `
-        <div class="d-flex align-items-center justify-content-between gap-2">
-          <div>
-            <div class="fw-bold">🌾 ${safeStr(f.name || ("Farm #" + f.id))}</div>
-            <div class="text-secondary small">${safeStr(f.country || "")}</div>
-          </div>
-          <div class="text-warning">›</div>
-        </div>
-      `;
-      btn.addEventListener("click", () => {
-        activeFarm = String(f.id);
-        if (farmSelect) farmSelect.value = String(f.id);
-        // retourne sur "Tous"
-        document.querySelector('.chip[data-type="all"]')?.click?.();
-        toast(`🌾 ${safeStr(f.name)} sélectionnée`);
-        haptic("light");
-      });
-      farmList.appendChild(btn);
-    });
-  }
-
   /* ================= EVENTS ================= */
   // category chips
   document.querySelectorAll(".chip").forEach((b) => {
@@ -750,12 +681,6 @@
 
       activeType = b.dataset.type || "all";
       activeSub = "all";
-
-      if (farmSection) farmSection.style.display = (activeType === "farm") ? "block" : "none";
-      if (activeType === "farm") {
-        renderFarmList();
-      }
-
       renderSubChips();
       renderList();
       haptic("light");
@@ -764,14 +689,6 @@
 
   // search
   searchInput?.addEventListener("input", () => renderList());
-
-  // farm search
-  farmSearchInput?.addEventListener("input", () => renderFarmList());
-  farmClearBtn?.addEventListener("click", () => {
-    if (farmSearchInput) farmSearchInput.value = "";
-    renderFarmList();
-    haptic("light");
-  });
   clearBtn?.addEventListener("click", () => {
     searchInput.value = "";
     renderList();
