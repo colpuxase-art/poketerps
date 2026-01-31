@@ -5,107 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <title>HarvestDex — Dex</title>
 
-    <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
-    <link href="css/styles.css" rel="stylesheet" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
-
-    <style>
-      :root{
-        --pk-red: rgba(220,53,69,1);
-        --pk-amber: rgba(255,193,7,1);
-        --glass: rgba(255,255,255,.06);
-        --line: rgba(255,255,255,.10);
-        --text2: rgba(255,255,255,.70);
-      }
-      body.bg-dark{
-        background:
-          radial-gradient(900px 500px at 15% 10%, rgba(255,193,7,.12), transparent 60%),
-          radial-gradient(800px 500px at 85% 15%, rgba(220,53,69,.16), transparent 60%),
-          radial-gradient(900px 700px at 60% 80%, rgba(0,180,255,.10), transparent 55%),
-          linear-gradient(180deg, #05060b, #070915 45%, #05060b);
-        overflow-x: hidden;
-      }
-      .control-pill{
-        border: 1px solid rgba(255,255,255,.12);
-        background: rgba(255,255,255,.04);
-        border-radius: 14px;
-        padding: 10px;
-      }
-      .pill-btn{
-        border-radius: 12px;
-        border: 1px solid rgba(255,255,255,.14);
-        background: rgba(255,255,255,.04);
-        color: rgba(255,255,255,.85);
-      }
-      .pill-btn.active{ border-color: rgba(255,193,7,.35); }
-      #subChips { display:none; gap:8px; flex-wrap:wrap; margin-top:10px; }
-
-      /* featured cards */
-      .featured-card{
-        border-radius: 18px;
-        overflow: hidden;
-        border: 1px solid rgba(255,255,255,.12);
-        background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.90));
-        box-shadow: 0 16px 40px rgba(0,0,0,.55);
-        padding: 14px;
-      }
-      .featured-card.rare{ border-color: rgba(220,53,69,.55); }
-      .featured-card.partner{ border-color: rgba(255,255,255,.20); }
-      .featured-card.legend{
-        border-color: rgba(255,193,7,.40);
-        box-shadow: 0 0 26px rgba(255,193,7,.12), 0 16px 40px rgba(0,0,0,.55);
-      }
-      .featured-title{ font-weight: 900; letter-spacing:.2px; }
-      .featured-mini{ font-size:.92rem; color: rgba(255,255,255,.70); }
-      .featured-img{ width:64px;height:64px;border-radius:14px;object-fit:cover;border:1px solid rgba(255,255,255,.12); }
-
-      /* home sections */
-      .section-head{
-        display:flex; align-items:center; justify-content:space-between; gap:10px;
-        margin-top: 14px;
-      }
-      .card-row{
-        display:flex; gap:10px; overflow:auto; padding-bottom: 6px;
-      }
-      .mini-card{
-        min-width: 220px;
-        border-radius: 16px;
-        border: 1px solid rgba(255,255,255,.12);
-        background: rgba(0,0,0,.55);
-        padding: 10px;
-        cursor:pointer;
-      }
-      .mini-card:hover{ border-color: rgba(255,255,255,.22); }
-      .mini-top{ display:flex; gap:10px; align-items:center; }
-      .mini-img{ width:46px; height:46px; border-radius: 12px; object-fit:cover; border:1px solid rgba(255,255,255,.10); }
-      .mini-name{ font-weight: 800; }
-      .mini-meta{ font-size:.82rem; color: rgba(255,255,255,.70); }
-
-      .panel { display:none; }
-      .panel.active { display:block; }
-      #toast{
-        position: fixed; left: 50%; bottom: 78px; transform: translateX(-50%);
-        padding: 10px 14px; border-radius: 14px;
-        background: rgba(0,0,0,.75);
-        border: 1px solid rgba(255,255,255,.12);
-        color: rgba(255,255,255,.9);
-        display:none; z-index: 9999;
-      }
-      /* bottom nav */
-      .bottom-nav{
-        position: fixed; left:0; right:0; bottom:0;
-        display:flex; justify-content:space-around;
-        background: rgba(0,0,0,.82);
-        border-top: 1px solid rgba(255,255,255,.12);
-        padding: 8px 10px; z-index: 9998;
-      }
-      .bn-item{ background:transparent; border:0; color: rgba(255,255,255,.85); padding: 6px 10px; border-radius: 14px; }
-      .bn-item.active{ background: rgba(255,255,255,.08); }
-      .bn-ico{ display:block; font-size: 18px; line-height: 18px; }
-      .bn-txt{ display:block; font-size: 12px; opacity:.9; }
-      #detailsAnchor { scroll-margin-top: 80px; }
-    </style>
+    <link href="css/styles.css" rel="stylesheet" />
   </head>
 
   <body class="bg-dark">
@@ -121,11 +23,18 @@
 
     <header class="py-4 bg-black">
       <div class="container">
-        <div class="p-3 rounded-4 border border-danger">
+        <div class="p-3 rounded-4 border border-danger pokedex-header">
           <div class="d-flex align-items-center gap-3 flex-wrap">
+            <div class="pokedex-lights">
+              <span class="big"></span>
+              <span class="s red"></span>
+              <span class="s yellow"></span>
+              <span class="s green"></span>
+            </div>
+
             <div>
               <h1 class="h3 mb-1 text-white">Fiches THC & Terpènes</h1>
-              <p class="mb-0 text-secondary">Accueil (sections) → Voir tous → filtres</p>
+              <p class="mb-0 text-secondary">Choisis une catégorie → sélectionne une fiche → lis le profil</p>
             </div>
           </div>
         </div>
@@ -135,112 +44,127 @@
     <main class="py-4">
       <div class="container">
 
-        <!-- ===================== DEX PANEL ===================== -->
         <section id="panelDex" class="panel active">
           <div class="row g-4">
-            <!-- LISTE -->
+
             <div class="col-lg-5">
-              <div class="card bg-black text-white border border-danger rounded-4 shadow-sm">
+              <div id="detailsCard" class="card bg-black text-white border border-danger rounded-4 shadow-sm">
                 <div class="card-body">
 
-                  <!-- HOME SECTION: Rare + Partner + Popular/Trending/New -->
-                  <div id="homeWrap">
-                    <div id="featuredBox" class="featured-card rare mb-3" style="display:none;">
-                      <div class="d-flex gap-3 align-items-center">
-                        <img id="featuredImg" src="" class="featured-img" alt="rare">
-                        <div class="flex-grow-1">
-                          <div id="featuredTitle" class="featured-title">✨ Shiny du moment</div>
-                          <div id="featuredName" class="fw-bold">—</div>
-                          <div id="featuredMeta" class="featured-mini">—</div>
-                          <div id="featuredLine" class="mt-2 featured-mini">🧬 —</div>
+                  <!-- RARE BOX -->
+                  <div id="featuredBox" class="featured-wrap featured-shine featured-glow p-3 mb-3" style="display:none;">
+                    <div id="sparkles" class="sparkles"></div>
+                    <div class="d-flex align-items-start gap-3">
+                      <img id="featuredImg" src="" alt="" width="68" height="68"
+                        style="border-radius:14px; object-fit:cover; border:1px solid rgba(255,255,255,.12);" />
+                      <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between gap-2 flex-wrap">
+                          <div>
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                              <div id="featuredTitle" class="badge text-bg-warning featured-badge mb-2">✨ Rare du moment</div>
+                              <div id="featuredCount" class="badge text-bg-danger mb-2" style="display:none;">Rare #—</div>
+                            </div>
+                            <div id="featuredName" class="fw-bold">—</div>
+                            <div id="featuredMeta" class="featured-mini">—</div>
+                          </div>
+                          <div class="d-flex align-items-center gap-2">
+                            <button id="featuredViewBtn" class="btn btn-sm btn-danger featured-btn" type="button">Voir</button>
+                          </div>
                         </div>
-                        <button id="featuredViewBtn" class="btn btn-sm btn-danger" type="button">Voir</button>
+                        <div id="featuredLine" class="mt-2 featured-mini">🧬 —</div>
                       </div>
                     </div>
+                  </div>
 
-                    <div id="partnerBox" class="featured-card partner mb-3" style="display:none;">
+                  <!-- PARTNER BOX -->
+                  <div id="partnerBox" class="mb-3" style="display:none;">
+                    <div class="featured-card partner-card">
                       <div class="d-flex gap-3 align-items-center">
-                        <img id="partnerImg" src="" class="featured-img" alt="partner">
+                        <img id="partnerImg" src="https://i.imgur.com/0HqWQvH.png" class="featured-img" alt="partner">
                         <div class="flex-grow-1">
                           <div id="partnerTitle" class="featured-title">🤝 Partenaire du moment</div>
-                          <div id="partnerName" class="fw-bold">—</div>
-                          <div id="partnerMeta" class="featured-mini">—</div>
+                          <div class="d-flex align-items-center justify-content-between gap-2">
+                            <div>
+                              <div id="partnerName" class="featured-name">—</div>
+                              <div id="partnerMeta" class="featured-mini">—</div>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                              <button id="partnerViewBtn" class="btn btn-sm btn-outline-light featured-btn" type="button">Voir</button>
+                            </div>
+                          </div>
                           <div id="partnerLine" class="mt-2 featured-mini">🧬 —</div>
                         </div>
-                        <button id="partnerViewBtn" class="btn btn-sm btn-outline-light" type="button">Voir</button>
                       </div>
                     </div>
-
-                    <div class="section-head">
-                      <div class="fw-bold">🔥 Populaire</div>
-                      <button id="btnShowAllPopular" class="btn btn-sm btn-outline-light" type="button">Voir tous</button>
-                    </div>
-                    <div id="popularRow" class="card-row"></div>
-
-                    <div class="section-head">
-                      <div class="fw-bold">🔥 Tendance (7 jours)</div>
-                      <button id="btnShowAllTrending" class="btn btn-sm btn-outline-light" type="button">Voir tous</button>
-                    </div>
-                    <div id="trendingRow" class="card-row"></div>
-
-                    <div class="section-head">
-                      <div class="fw-bold">⭐ Nouveautés (30 jours)</div>
-                      <button id="btnShowAllNewest" class="btn btn-sm btn-outline-light" type="button">Voir tous</button>
-                    </div>
-                    <div id="newestRow" class="card-row mb-3"></div>
-
-                    <div class="d-grid">
-                      <button id="btnOpenAll" class="btn btn-danger" type="button">📚 Voir toutes les fiches</button>
-                    </div>
-
-                    <hr class="border-secondary my-3"/>
                   </div>
 
-                  <!-- ALL LIST CONTROLS -->
-                  <div id="allControls" style="display:none;">
-                    <div class="control-pill mb-3">
-                      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-                        <div class="d-flex align-items-center gap-2 flex-wrap">
-                          <span class="badge text-bg-danger" id="countBadge">0</span>
-                          <span class="badge text-bg-warning text-dark" id="favBadge">❤️ 0</span>
-                        </div>
-
-                        <div class="d-flex align-items-center gap-2 flex-wrap">
-                          <select id="sortSelect" class="form-select form-select-sm bg-dark text-white border-secondary" style="width:auto;">
-                            <option value="new">🆕 Nouveau</option>
-                            <option value="az">A–Z</option>
-                            <option value="thc">🔥 THC (haut)</option>
-                          </select>
-                          <select id="farmSelect" class="form-select form-select-sm bg-dark text-white border-secondary" style="width:auto;">
-                            <option value="all">🌾 Toutes les fermes</option>
-                          </select>
-                          <button id="favToggle" class="btn btn-sm pill-btn" type="button">❤️ Favoris</button>
-                        </div>
+                  <!-- 🔥 Sections -->
+                  <div id="sectionsWrap" class="mb-3">
+                    <div class="legend-section mb-3" id="secPopular" style="display:none;">
+                      <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div class="legend-title"><span class="legend-badge">⭐</span> Populaire</div>
+                        <button class="btn btn-sm btn-outline-light" id="btnPopularAll" type="button">Voir tous</button>
                       </div>
+                      <div class="legend-row" id="rowPopular"></div>
+                    </div>
 
-                      <div class="mt-2 d-flex gap-2">
-                        <input id="searchInput" class="form-control bg-dark text-white border-secondary" type="search"
-                          placeholder="Rechercher…" autocomplete="off"/>
-                        <button id="clearBtn" class="btn btn-outline-light" type="button">✕</button>
+                    <div class="legend-section mb-3" id="secTrending" style="display:none;">
+                      <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div class="legend-title"><span class="legend-badge">🔥</span> Tendance (7 jours)</div>
+                        <button class="btn btn-sm btn-outline-light" id="btnTrendingAll" type="button">Voir tous</button>
                       </div>
+                      <div class="legend-row" id="rowTrending"></div>
                     </div>
 
-                    <div class="mt-2 d-flex flex-wrap gap-2">
-                      <button class="btn btn-sm btn-outline-danger chip active" data-type="all" type="button">Tous</button>
-                      <button class="btn btn-sm btn-outline-light chip" data-type="hash" type="button">Hash</button>
-                      <button class="btn btn-sm btn-outline-success chip" data-type="weed" type="button">Weed</button>
-                      <button class="btn btn-sm btn-outline-warning chip" data-type="extraction" type="button">Extraction</button>
-                      <button class="btn btn-sm btn-outline-info chip" data-type="wpff" type="button">WPFF</button>
+                    <div class="legend-section mb-3" id="secNew" style="display:none;">
+                      <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div class="legend-title"><span class="legend-badge">🆕</span> Nouveautés</div>
+                        <button class="btn btn-sm btn-outline-light" id="btnNewAll" type="button">Voir tous</button>
+                      </div>
+                      <div class="legend-row" id="rowNew"></div>
                     </div>
-
-                    <div id="subChips"></div>
-
-                    <div class="mt-2 d-grid">
-                      <button id="btnBackHome" class="btn btn-outline-light" type="button">⬅️ Retour Accueil</button>
-                    </div>
-
-                    <div class="mt-3 list-group list-group-flush" id="list"></div>
                   </div>
+
+                  <!-- CONTROLS -->
+                  <div class="control-pill mb-3">
+                    <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                      <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="badge text-bg-danger" id="countBadge">0</span>
+                        <span class="badge text-bg-warning text-dark" id="favBadge">❤️ 0</span>
+                      </div>
+
+                      <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <select id="sortSelect" class="form-select form-select-sm bg-dark text-white border-secondary" style="width:auto;">
+                          <option value="new">🆕 Nouveau</option>
+                          <option value="az">A–Z</option>
+                          <option value="thc">🔥 THC (haut)</option>
+                        </select>
+                        <select id="farmSelect" class="form-select form-select-sm bg-dark text-white border-secondary" style="width:auto;">
+                          <option value="all">🌾 Toutes les fermes</option>
+                        </select>
+                        <button id="favToggle" class="btn btn-sm pill-btn" type="button">❤️ Favoris</button>
+                      </div>
+                    </div>
+
+                    <div class="mt-2 d-flex gap-2">
+                      <input id="searchInput" class="form-control bg-dark text-white border-secondary" type="search"
+                        placeholder="Rechercher… (terpènes/arômes/effets aussi)" autocomplete="off"/>
+                      <button id="clearBtn" class="btn btn-outline-light" type="button">✕</button>
+                    </div>
+                  </div>
+
+                  <!-- FILTER CHIPS -->
+                  <div class="mt-2 d-flex flex-wrap gap-2">
+                    <button class="btn btn-sm btn-outline-danger chip active" data-type="all" type="button">Tous</button>
+                    <button class="btn btn-sm btn-outline-light chip" data-type="hash" type="button">Hash</button>
+                    <button class="btn btn-sm btn-outline-success chip" data-type="weed" type="button">Weed</button>
+                    <button class="btn btn-sm btn-outline-warning chip" data-type="extraction" type="button">Extraction</button>
+                    <button class="btn btn-sm btn-outline-info chip" data-type="wpff" type="button">WPFF</button>
+                  </div>
+
+                  <div id="subChips"></div>
+
+                  <div class="mt-3 list-group list-group-flush" id="list"></div>
 
                   <div class="mt-2">
                     <small class="text-secondary">
@@ -251,7 +175,6 @@
               </div>
             </div>
 
-            <!-- DETAILS -->
             <div class="col-lg-7" id="detailsAnchor">
               <div class="card bg-black text-white border border-danger rounded-4 shadow-sm">
                 <div class="card-body">
@@ -274,7 +197,7 @@
                       <div class="col-md-5">
                         <div class="p-3 rounded-4 bg-dark border border-secondary text-center">
                           <img id="pokeImg" src="" alt="" class="img-fluid" style="max-height: 220px; display:none;" />
-                          <div id="placeholder" class="text-secondary">👈 Choisis une fiche</div>
+                          <div id="placeholder" class="text-secondary">👈 Choisis dans la liste</div>
                         </div>
                         <div class="mt-2 d-flex gap-2">
                           <button id="favBtn" class="btn btn-sm btn-outline-warning w-100" type="button">❤️ Ajouter aux favoris</button>
@@ -294,9 +217,7 @@
 
                           <hr class="border-secondary my-3" />
 
-                          <pre id="pokeDesc" class="mb-0 text-secondary" style="white-space: pre-wrap; font-family: inherit;">
-Ici tu verras la fiche complète.
-                          </pre>
+                          <pre id="pokeDesc" class="mb-0 text-secondary" style="white-space: pre-wrap; font-family: inherit;">Ici tu verras la fiche complète.</pre>
                         </div>
                       </div>
                     </div>
@@ -308,29 +229,26 @@ Ici tu verras la fiche complète.
                 </div>
               </div>
             </div>
+
           </div>
         </section>
 
-        <!-- ===================== MY DEX PANEL ===================== -->
         <section id="panelMyDex" class="panel">
           <div class="card bg-black text-white border border-danger rounded-4 shadow-sm">
             <div class="card-body">
               <h2 class="h4 mb-2">⭐ Mon Dex</h2>
-              <p class="text-secondary mb-3">Tes favoris (liés à ton Telegram ID).</p>
-
+              <p class="text-secondary mb-3">Ici tu verras tes favoris (liés à ton Telegram ID).</p>
               <div id="myDexEmpty" class="text-secondary">Aucune fiche dans ton Dex pour le moment.</div>
               <div id="myDexList" class="list-group list-group-flush mt-3"></div>
             </div>
           </div>
         </section>
 
-        <!-- ===================== PROFILE PANEL ===================== -->
         <section id="panelProfile" class="panel">
           <div class="card bg-black text-white border border-danger rounded-4 shadow-sm">
             <div class="card-body">
               <h2 class="h4 mb-2">👤 Mon Profil</h2>
               <p class="text-secondary mb-3">Ton Dex est lié à ton Telegram ID.</p>
-
               <div class="p-3 rounded-4 bg-dark border border-secondary">
                 <div class="d-flex justify-content-between">
                   <span class="text-secondary">Telegram ID</span>
@@ -341,7 +259,6 @@ Ici tu verras la fiche complète.
                   <span id="profileFavCount" class="fw-semibold">—</span>
                 </div>
               </div>
-
               <div class="mt-3 text-secondary small">
                 ℹ️ Si ton ID est vide, ouvre l’app depuis Telegram (pas via navigateur normal).
               </div>
@@ -361,15 +278,9 @@ Ici tu verras la fiche complète.
     <div id="toast">—</div>
 
     <nav id="bottomNav" class="bottom-nav">
-      <button id="btnNavDex" class="bn-item active" type="button">
-        <span class="bn-ico">📘</span><span class="bn-txt">Dex</span>
-      </button>
-      <button id="btnNavMyDex" class="bn-item" type="button">
-        <span class="bn-ico">⭐</span><span class="bn-txt">Mon Dex</span>
-      </button>
-      <button id="btnNavProfile" class="bn-item" type="button">
-        <span class="bn-ico">👤</span><span class="bn-txt">Profil</span>
-      </button>
+      <button id="btnNavDex" class="bn-item active" type="button"><span class="bn-ico">📘</span><span class="bn-txt">Dex</span></button>
+      <button id="btnNavMyDex" class="bn-item" type="button"><span class="bn-ico">⭐</span><span class="bn-txt">Mon Dex</span></button>
+      <button id="btnNavProfile" class="bn-item" type="button"><span class="bn-ico">👤</span><span class="bn-txt">Profil</span></button>
     </nav>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -377,11 +288,9 @@ Ici tu verras la fiche complète.
 
     <script>
       document.getElementById("year").textContent = new Date().getFullYear();
-
       const panelDex = document.getElementById("panelDex");
       const panelMyDex = document.getElementById("panelMyDex");
       const panelProfile = document.getElementById("panelProfile");
-
       const btnNavDex = document.getElementById("btnNavDex");
       const btnNavMyDex = document.getElementById("btnNavMyDex");
       const btnNavProfile = document.getElementById("btnNavProfile");
@@ -395,17 +304,9 @@ Ici tu verras la fiche complète.
         which.classList.add("active");
       }
 
-      btnNavDex.addEventListener("click", () => {
-        setActive(btnNavDex); showPanel(panelDex);
-      });
-      btnNavMyDex.addEventListener("click", () => {
-        setActive(btnNavMyDex); showPanel(panelMyDex);
-        if (window.loadMyDex) window.loadMyDex();
-      });
-      btnNavProfile.addEventListener("click", () => {
-        setActive(btnNavProfile); showPanel(panelProfile);
-        if (window.loadProfile) window.loadProfile();
-      });
+      btnNavDex.addEventListener("click", () => { setActive(btnNavDex); showPanel(panelDex); });
+      btnNavMyDex.addEventListener("click", () => { setActive(btnNavMyDex); showPanel(panelMyDex); if (window.loadMyDex) window.loadMyDex(); });
+      btnNavProfile.addEventListener("click", () => { setActive(btnNavProfile); showPanel(panelProfile); if (window.loadProfile) window.loadProfile(); });
     </script>
   </body>
 </html>

@@ -1,4 +1,3 @@
-
 const express = require("express");
 const TelegramBot = require("node-telegram-bot-api");
 const path = require("path");
@@ -30,9 +29,6 @@ const INFO_IMAGE_URL =
 const SUPPORT_IMAGE_URL =
   process.env.SUPPORT_IMAGE_URL || "https://i.postimg.cc/8C6r8V5p/harvestdex-support.jpg";
 
-// 👉 MODE BOT: webhook si WEBHOOK_URL présent, sinon polling (comme avant)
-const WEBHOOK_URL = (process.env.WEBHOOK_URL || "").trim();
-
 if (!TOKEN) {
   console.error("❌ BOT_TOKEN manquant.");
   process.exit(1);
@@ -52,40 +48,82 @@ function assertSupabase() {
 }
 
 // =========================
+// Telegram: POLLING ONLY (comme avant)
+// =========================
+const bot = new TelegramBot(TOKEN, { polling: true });
+console.log("✅ Bot en mode POLLING");
+
+// Hard guards (Render)
+bot.on("polling_error", (err) => {
+  console.error("❌ polling_error:", err?.message || err);
+});
+process.on("unhandledRejection", (err) => console.error("⚠️ Rejet non géré :", err?.message || err));
+process.on("uncaughtException", (err) => console.error("⚠️ Exception non gérée :", err?.message || err));
+
+// =========================
+// Safe send helpers (évite crash parse entities)
+// =========================
+function stripParseMode(opts = {}) {
+  const o = { ...(opts || {}) };
+  delete o.parse_mode;
+  return o;
+}
+async async function safeSendMessage(chatId, text, opts) {
+  try {
+    return await bot.sendMessage(chatId, text, opts);
+  } catch (e) {
+    const msg = String(e?.message || "");
+    // si Markdown/HTML casse -> renvoyer sans parse_mode
+    if (msg.toLowerCase().includes("can't parse entities") || msg.toLowerCase().includes("impossible d'analyser")) {
+      try {
+        return await bot.sendMessage(chatId, text, stripParseMode(opts));
+      } catch (e2) {
+        console.error("❌ sendMessage retry failed:", e2?.message || e2);
+        return null;
+      }
+    }
+    console.error("❌ sendMessage failed:", msg);
+    return null;
+  }
+}
+async async function safeSendPhoto(chatId, photo, opts) {
+  try {
+    return await bot.sendPhoto(chatId, photo, opts);
+  } catch (e) {
+    const msg = String(e?.message || "");
+    if (msg.toLowerCase().includes("can't parse entities") || msg.toLowerCase().includes("impossible d'analyser")) {
+      try {
+        return await bot.sendPhoto(chatId, photo, stripParseMode(opts));
+      } catch (e2) {
+        console.error("❌ sendPhoto retry failed:", e2?.message || e2);
+        return null;
+      }
+    }
+    console.error("❌ sendPhoto failed:", msg);
+    return null;
+  }
+}
+
+// =========================
 // Admin
 // =========================
 const ADMIN_IDS = new Set([6675436692]); // ✅ TON USER ID
 const isAdminUser = (userId) => ADMIN_IDS.has(Number(userId));
 
 // =========================
-// Cache
-// =========================
-const _cache = {
-  subcategories: { ts: 0, data: [] },
-  farms: { ts: 0, data: [] },
-};
-const CACHE_TTL_MS = 60_000;
-
-// =========================
 // DB: compat FR/EN (tables + colonnes)
 // =========================
 const TABLES = {
-  cards: ["cards", "cartes"],
-  favorites: ["favorites", "favoris"],
-  farms: ["farms", "fermes"],
-  subcategories: ["subcategories", "sous-categories", "sous_categories", "sous-catégories"],
-  track: ["track_events", "tracking_events", "events", "trackevent"],
+  cards: ["cartes", "cards"],
+  favorites: ["favoris", "favorites"],
+  farms: ["fermes", "farms"],
+  subcategories: ["subcategories", "sous-catégories", "sous_categories", "sous-categories"],
+  track: ["track_events", "trackevent", "events"],
 };
 
 function isMissingRelation(err) {
   const m = String(err?.message || "").toLowerCase();
-  return (
-    m.includes("does not exist") ||
-    m.includes("relation") ||
-    m.includes("not found") ||
-    m.includes("schema cache") ||
-    m.includes("could not find the table")
-  );
+  return m.includes("does not exist") || m.includes("relation") || m.includes("not found");
 }
 
 async function runWithTable(candidates, fn) {
@@ -108,7 +146,6 @@ function pick(obj, keys) {
   }
   return undefined;
 }
-
 function normalizeArray(v) {
   if (!v) return [];
   if (Array.isArray(v)) return v.filter(Boolean);
@@ -124,7 +161,7 @@ function normalizeCardRow(r) {
   const type = pick(r, ["taper", "type"]) ?? "";
   const thc = pick(r, ["THC", "thc"]) ?? "";
   const description = pick(r, ["description", "desc"]) ?? "";
-  const img = pick(r, ["img", "image"]) ?? "";
+  const img = pick(r, ["image", "img"]) ?? "";
   const advice = pick(r, ["conseil", "advice"]) ?? "";
   const micron = pick(r, ["micron"]) ?? null;
 
@@ -145,8 +182,6 @@ function normalizeCardRow(r) {
 
   const is_partner = Boolean(pick(r, ["est_partenaire", "is_partner"]) ?? false);
   const partner_title = pick(r, ["titre_partenaire", "partner_title"]) ?? null;
-
-  const created_at = pick(r, ["created_at"]) ?? null;
 
   return {
     id,
@@ -169,7 +204,6 @@ function normalizeCardRow(r) {
     featured_title,
     is_partner,
     partner_title,
-    created_at,
   };
 }
 
@@ -231,33 +265,31 @@ function denormalizeFarmPayload(payload, tableName) {
   const isFR = tableName === "fermes";
   const out = {};
   const name = payload.name ?? payload.nom ?? null;
-
   out.name = name;
   out.country = payload.country ?? payload.pays ?? null;
   out.instagram = payload.instagram ?? null;
   out.website = payload.website ?? payload.site ?? null;
   out.is_active = payload.is_active ?? true;
-
   return out;
 }
 
 // =========================
-// DB: reads (subcategories, farms)
+// Cache simple
+// =========================
+const _cache = { subcategories: { ts: 0, data: [] }, farms: { ts: 0, data: [] } };
+const CACHE_TTL_MS = 60_000;
+
+// =========================
+// DB: reads
 // =========================
 async function dbListSubcategories() {
   assertSupabase();
   return runWithTable(TABLES.subcategories, async (t) => {
-    const { data, error } = await sb
-      .from(t)
-      .select("*")
-      .eq("is_active", true)
-      .order("type", { ascending: true })
-      .order("sort", { ascending: true });
+    const { data, error } = await sb.from(t).select("*").eq("is_active", true).order("type", { ascending: true }).order("sort", { ascending: true });
     if (error) throw error;
     return data || [];
   });
 }
-
 async function dbListFarms() {
   assertSupabase();
   return runWithTable(TABLES.farms, async (t) => {
@@ -266,7 +298,6 @@ async function dbListFarms() {
     return data || [];
   });
 }
-
 async function dbInsertFarm(payload) {
   assertSupabase();
   return runWithTable(TABLES.farms, async (t) => {
@@ -284,12 +315,11 @@ async function getSubcategoriesSafe() {
     const rows = await dbListSubcategories();
     _cache.subcategories = { ts: now, data: rows };
     return rows;
-  } catch {
+  } catch (e) {
     _cache.subcategories = { ts: now, data: [] };
     return [];
   }
 }
-
 async function getFarmsSafe() {
   const now = Date.now();
   if (_cache.farms.data.length && now - _cache.farms.ts < CACHE_TTL_MS) return _cache.farms.data;
@@ -297,26 +327,17 @@ async function getFarmsSafe() {
     const rows = await dbListFarms();
     _cache.farms = { ts: now, data: rows };
     return rows;
-  } catch {
+  } catch (e) {
     _cache.farms = { ts: now, data: [] };
     return [];
   }
 }
 
 app.get("/api/subcategories", async (req, res) => {
-  try {
-    res.json(await getSubcategoriesSafe());
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  try { res.json(await getSubcategoriesSafe()); } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
 app.get("/api/farms", async (req, res) => {
-  try {
-    res.json(await getFarmsSafe());
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  try { res.json(await getFarmsSafe()); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // =========================
@@ -330,7 +351,6 @@ async function dbListCards() {
     return (data || []).map(normalizeCardRow).filter(Boolean);
   });
 }
-
 async function dbGetCard(id) {
   assertSupabase();
   return runWithTable(TABLES.cards, async (t) => {
@@ -339,7 +359,6 @@ async function dbGetCard(id) {
     return normalizeCardRow(data);
   });
 }
-
 async function dbInsertCard(payload) {
   assertSupabase();
   return runWithTable(TABLES.cards, async (t) => {
@@ -349,7 +368,6 @@ async function dbInsertCard(payload) {
     return normalizeCardRow(data);
   });
 }
-
 async function dbUpdateCard(id, patch) {
   assertSupabase();
   return runWithTable(TABLES.cards, async (t) => {
@@ -359,7 +377,6 @@ async function dbUpdateCard(id, patch) {
     return normalizeCardRow(data);
   });
 }
-
 async function dbDeleteCard(id) {
   assertSupabase();
   return runWithTable(TABLES.cards, async (t) => {
@@ -370,78 +387,73 @@ async function dbDeleteCard(id) {
 }
 
 // =========================
-// Featured + Partner
+// FEATURED + PARTNER
 // =========================
 async function dbGetFeatured() {
   assertSupabase();
   return runWithTable(TABLES.cards, async (t) => {
-    const col = t === "cartes" ? "est_mis_en_avant" : "is_featured";
+    const isFR = t === "cartes";
+    const col = isFR ? "est_mis_en_avant" : "is_featured";
     const { data, error } = await sb.from(t).select("*").eq(col, true).order("id", { ascending: false }).limit(1).maybeSingle();
     if (error) throw error;
     return normalizeCardRow(data);
   });
 }
-
 async function dbSetFeatured(id, title) {
   assertSupabase();
   return runWithTable(TABLES.cards, async (t) => {
-    const flag = t === "cartes" ? "est_mis_en_avant" : "is_featured";
-    const titleCol = t === "cartes" ? "titre_vedette" : "featured_title";
-
+    const isFR = t === "cartes";
+    const flag = isFR ? "est_mis_en_avant" : "is_featured";
+    const titleCol = isFR ? "titre_vedette" : "featured_title";
     const { error: e1 } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
     if (e1) throw e1;
-
-    const patch = { [flag]: true, [titleCol]: title || "✨ Shiny du moment" };
+    const patch = { [flag]: true, [titleCol]: title || "✨ Rare du moment" };
     const { data, error: e2 } = await sb.from(t).update(patch).eq("id", id).select("*").single();
     if (e2) throw e2;
-
     return normalizeCardRow(data);
   });
 }
-
 async function dbUnsetFeatured() {
   assertSupabase();
   return runWithTable(TABLES.cards, async (t) => {
-    const flag = t === "cartes" ? "est_mis_en_avant" : "is_featured";
-    const titleCol = t === "cartes" ? "titre_vedette" : "featured_title";
+    const isFR = t === "cartes";
+    const flag = isFR ? "est_mis_en_avant" : "is_featured";
+    const titleCol = isFR ? "titre_vedette" : "featured_title";
     const { error } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
     if (error) throw error;
     return true;
   });
 }
-
 async function dbGetPartner() {
   assertSupabase();
   return runWithTable(TABLES.cards, async (t) => {
-    const col = t === "cartes" ? "est_partenaire" : "is_partner";
+    const isFR = t === "cartes";
+    const col = isFR ? "est_partenaire" : "is_partner";
     const { data, error } = await sb.from(t).select("*").eq(col, true).order("id", { ascending: false }).limit(1).maybeSingle();
     if (error) throw error;
     return normalizeCardRow(data);
   });
 }
-
 async function dbSetPartner(id, title) {
   assertSupabase();
   return runWithTable(TABLES.cards, async (t) => {
-    const flag = t === "cartes" ? "est_partenaire" : "is_partner";
-    const titleCol = t === "cartes" ? "titre_partenaire" : "partner_title";
-
+    const isFR = t === "cartes";
+    const flag = isFR ? "est_partenaire" : "is_partner";
+    const titleCol = isFR ? "titre_partenaire" : "partner_title";
     const { error: e1 } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
     if (e1) throw e1;
-
     const patch = { [flag]: true, [titleCol]: title || "🤝 Partenaire du moment" };
     const { data, error: e2 } = await sb.from(t).update(patch).eq("id", id).select("*").single();
     if (e2) throw e2;
-
     return normalizeCardRow(data);
   });
 }
-
 async function dbUnsetPartner() {
   assertSupabase();
   return runWithTable(TABLES.cards, async (t) => {
-    const flag = t === "cartes" ? "est_partenaire" : "is_partner";
-    const titleCol = t === "cartes" ? "titre_partenaire" : "partner_title";
+    const isFR = t === "cartes";
+    const flag = isFR ? "est_partenaire" : "is_partner";
+    const titleCol = isFR ? "titre_partenaire" : "partner_title";
     const { error } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
     if (error) throw error;
     return true;
@@ -449,96 +461,28 @@ async function dbUnsetPartner() {
 }
 
 // =========================
-// Home sections (popular / trending / newest)
+// Enrich labels
 // =========================
-async function getFavoriteCounts() {
-  // returns Map(card_id -> count)
-  try {
-    assertSupabase();
-    const rows = await runWithTable(TABLES.favorites, async (t) => {
-      const { data, error } = await sb.from(t).select("card_id");
-      if (error) throw error;
-      return data || [];
-    });
-    const map = new Map();
-    for (const r of rows) {
-      const id = String(r.card_id);
-      map.set(id, (map.get(id) || 0) + 1);
-    }
-    return map;
-  } catch {
-    return new Map();
-  }
-}
-
-async function getFavoriteCountsSince(isoDate) {
-  try {
-    assertSupabase();
-    const rows = await runWithTable(TABLES.favorites, async (t) => {
-      // best effort: created_at may exist
-      let q = sb.from(t).select("card_id, created_at");
-      if (isoDate) q = q.gte("created_at", isoDate);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data || [];
-    });
-    const map = new Map();
-    for (const r of rows) {
-      const id = String(r.card_id);
-      map.set(id, (map.get(id) || 0) + 1);
-    }
-    return map;
-  } catch {
-    return new Map();
-  }
-}
-
-async function getViewCountsSince(isoDate) {
-  // expects track_events with card_id + created_at + (optional) event/type
-  try {
-    assertSupabase();
-    const rows = await runWithTable(TABLES.track, async (t) => {
-      let q = sb.from(t).select("card_id, created_at, event, type, event_type");
-      if (isoDate) q = q.gte("created_at", isoDate);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data || [];
-    });
-
-    const map = new Map();
-    for (const r of rows) {
-      const id = r.card_id != null ? String(r.card_id) : null;
-      if (!id) continue;
-      map.set(id, (map.get(id) || 0) + 1);
-    }
-    return map;
-  } catch {
-    return new Map();
-  }
-}
-
 function enrichCardsWithLabels(cards, subcategories, farms) {
   const subMap = new Map((subcategories || []).map((s) => [String(s.id), s]));
   const farmMap = new Map((farms || []).map((f) => [String(f.id), f]));
-
   return (cards || []).map((c) => {
     const scId = c.subcategory_id ?? null;
     const sc = scId != null ? subMap.get(String(scId)) : null;
-
     const farmId = c.farm_id ?? null;
     const farm = farmId != null ? farmMap.get(String(farmId)) : null;
-
     return {
       ...c,
       subcategory: sc?.label || null,
       subcategory_type: sc?.type || null,
-      farm: farm
-        ? { id: farm.id, name: farm.name, country: farm.country, instagram: farm.instagram, website: farm.website }
-        : null,
+      farm: farm ? { id: farm.id, name: farm.name, country: farm.country, instagram: farm.instagram, website: farm.website } : null,
     };
   });
 }
 
+// =========================
+// API: cards / featured / partner
+// =========================
 app.get("/api/cards", async (req, res) => {
   try {
     const [cards, subs, farms] = await Promise.all([dbListCards(), getSubcategoriesSafe(), getFarmsSafe()]);
@@ -548,7 +492,6 @@ app.get("/api/cards", async (req, res) => {
     res.status(500).json({ error: "db_error", message: e.message });
   }
 });
-
 app.get("/api/featured", async (req, res) => {
   try {
     const [c, subs, farms] = await Promise.all([dbGetFeatured(), getSubcategoriesSafe(), getFarmsSafe()]);
@@ -558,69 +501,11 @@ app.get("/api/featured", async (req, res) => {
     res.status(500).json({ error: "db_error", message: e.message });
   }
 });
-
 app.get("/api/partner", async (req, res) => {
   try {
     const [c, subs, farms] = await Promise.all([dbGetPartner(), getSubcategoriesSafe(), getFarmsSafe()]);
     if (!c) return res.json(null);
     res.json(enrichCardsWithLabels([c], subs, farms)[0]);
-  } catch (e) {
-    res.status(500).json({ error: "db_error", message: e.message });
-  }
-});
-
-app.get("/api/home", async (req, res) => {
-  try {
-    const limit = Math.max(1, Math.min(12, Number(req.query.limit) || 8));
-
-    const [cards, subs, farms, favAll, viewsAll] = await Promise.all([
-      dbListCards(),
-      getSubcategoriesSafe(),
-      getFarmsSafe(),
-      getFavoriteCounts(),
-      getViewCountsSince(null),
-    ]);
-
-    const now = new Date();
-    const since7 = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
-    const since30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString();
-
-    const [fav7, views7] = await Promise.all([getFavoriteCountsSince(since7), getViewCountsSince(since7)]);
-
-    const enriched = enrichCardsWithLabels(cards, subs, farms);
-
-    // popular: favAll + viewsAll
-    const popular = [...enriched]
-      .map((c) => ({
-        ...c,
-        _score: (favAll.get(String(c.id)) || 0) * 3 + (viewsAll.get(String(c.id)) || 0),
-      }))
-      .sort((a, b) => b._score - a._score)
-      .slice(0, limit);
-
-    // trending: fav7 + views7
-    const trending = [...enriched]
-      .map((c) => ({
-        ...c,
-        _score: (fav7.get(String(c.id)) || 0) * 3 + (views7.get(String(c.id)) || 0),
-      }))
-      .sort((a, b) => b._score - a._score)
-      .slice(0, limit);
-
-    // newest: created_at last 30d if present, else id desc
-    const newestPool = enriched.filter((c) => !c.created_at || String(c.created_at) >= since30);
-    const newest = newestPool.sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0)).slice(0, limit);
-
-    const [featured, partner] = await Promise.all([dbGetFeatured(), dbGetPartner()]);
-    const out = {
-      featured: featured ? enrichCardsWithLabels([featured], subs, farms)[0] : null,
-      partner: partner ? enrichCardsWithLabels([partner], subs, farms)[0] : null,
-      popular,
-      trending,
-      newest,
-    };
-
-    res.json(out);
   } catch (e) {
     res.status(500).json({ error: "db_error", message: e.message });
   }
@@ -687,31 +572,157 @@ app.get("/api/mydex/:user_id", async (req, res) => {
 });
 
 // =========================
-// TELEGRAM BOT (polling/webhook)
+// Track events (views/clicks)
 // =========================
-let bot;
-
-if (WEBHOOK_URL) {
-  bot = new TelegramBot(TOKEN);
-  const hookPath = `/bot${TOKEN}`;
-  bot.setWebHook(`${WEBHOOK_URL}${hookPath}`);
-
-  app.post(hookPath, (req, res) => {
-    bot.processUpdate(req.body);
-    res.sendStatus(200);
+async function dbInsertTrackEvent(payload) {
+  assertSupabase();
+  return runWithTable(TABLES.track, async (t) => {
+    const { data, error } = await sb.from(t).insert(payload).select("*").maybeSingle();
+    if (error) throw error;
+    return data || null;
   });
-
-  console.log("✅ Bot en mode WEBHOOK :", `${WEBHOOK_URL}${hookPath}`);
-} else {
-  bot = new TelegramBot(TOKEN, { polling: true });
-  console.log("✅ Bot en mode POLLING");
 }
 
+app.post("/api/track", async (req, res) => {
+  try {
+    assertSupabase();
+    const { user_id, card_id, event_type } = req.body || {};
+    if (!card_id) return res.status(400).json({ error: "missing card_id" });
+    const row = {
+      user_id: user_id ?? null,
+      card_id: Number(card_id),
+      event_type: event_type || "view",
+      created_at: new Date().toISOString(),
+    };
+    try { await dbInsertTrackEvent(row); } catch (e) { /* ignore if schema differs */ }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // =========================
-// /start menu (⚠️ sans Markdown pour éviter les ETELEGRAM 400)
+// Stats endpoints
+// =========================
+function isoDaysAgo(days) {
+  const d = new Date(Date.now() - Number(days) * 86400 * 1000);
+  return d.toISOString();
+}
+
+async function fetchTrackCounts(days) {
+  // returns Map(card_id => count)
+  const since = isoDaysAgo(days);
+  try {
+    const rows = await runWithTable(TABLES.track, async (t) => {
+      // try standard columns
+      const { data, error } = await sb.from(t).select("card_id, event_type, created_at").gte("created_at", since);
+      if (error) throw error;
+      return data || [];
+    });
+    const m = new Map();
+    for (const r of rows) {
+      const cid = r.card_id;
+      if (!cid) continue;
+      if (r.event_type && String(r.event_type) !== "view" && String(r.event_type) !== "click") continue;
+      m.set(String(cid), (m.get(String(cid)) || 0) + 1);
+    }
+    return m;
+  } catch {
+    return new Map();
+  }
+}
+
+async function fetchFavoriteCounts() {
+  try {
+    const rows = await runWithTable(TABLES.favorites, async (t) => {
+      const { data, error } = await sb.from(t).select("card_id");
+      if (error) throw error;
+      return data || [];
+    });
+    const m = new Map();
+    for (const r of rows) {
+      const cid = r.card_id;
+      if (!cid) continue;
+      m.set(String(cid), (m.get(String(cid)) || 0) + 1);
+    }
+    return m;
+  } catch {
+    return new Map();
+  }
+}
+
+function topByScore(cards, scoreMap, limit) {
+  const arr = (cards || []).map(c => ({ c, s: scoreMap.get(String(c.id)) || 0 }))
+    .sort((a,b)=> b.s - a.s)
+    .slice(0, limit)
+    .map(x => x.c);
+  return arr;
+}
+
+app.get("/api/stats/popular", async (req, res) => {
+  try {
+    assertSupabase();
+    const limit = Math.min(Number(req.query.limit || 8), 20);
+    const [cards, subs, farms, favMap, views30] = await Promise.all([
+      dbListCards(),
+      getSubcategoriesSafe(),
+      getFarmsSafe(),
+      fetchFavoriteCounts(),
+      fetchTrackCounts(30),
+    ]);
+
+    const score = new Map();
+    for (const c of cards) {
+      const id = String(c.id);
+      const fav = favMap.get(id) || 0;
+      const views = views30.get(id) || 0;
+      score.set(id, fav * 3 + views); // pondération légère
+    }
+
+    const top = topByScore(cards, score, limit);
+    res.json(enrichCardsWithLabels(top, subs, farms));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/stats/trending", async (req, res) => {
+  try {
+    assertSupabase();
+    const days = Math.max(1, Math.min(Number(req.query.days || 7), 30));
+    const limit = Math.min(Number(req.query.limit || 8), 20);
+    const [cards, subs, farms, views] = await Promise.all([
+      dbListCards(),
+      getSubcategoriesSafe(),
+      getFarmsSafe(),
+      fetchTrackCounts(days),
+    ]);
+    const top = topByScore(cards, views, limit);
+    res.json(enrichCardsWithLabels(top, subs, farms));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/stats/new", async (req, res) => {
+  try {
+    assertSupabase();
+    const limit = Math.min(Number(req.query.limit || 8), 20);
+    const [cards, subs, farms] = await Promise.all([dbListCards(), getSubcategoriesSafe(), getFarmsSafe()]);
+    // proxy: id DESC
+    const top = [...cards].sort((a,b)=> (Number(b.id)||0)-(Number(a.id)||0)).slice(0, limit);
+    res.json(enrichCardsWithLabels(top, subs, farms));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// =========================
+// Telegram /start menu
 // =========================
 function buildStartKeyboard(userId) {
   const admin = isAdminUser(userId);
+
   const keyboard = [
     [{ text: "📘 Ouvrir le Dex", web_app: { url: WEBAPP_URL } }],
     [
@@ -721,6 +732,7 @@ function buildStartKeyboard(userId) {
     [{ text: "ℹ️ Informations", callback_data: "menu_info" }],
     [{ text: "🤝 Nous soutenir", callback_data: "menu_support" }],
   ];
+
   if (admin) keyboard.push([{ text: "🧰 Admin", callback_data: "menu_admin" }]);
   return keyboard;
 }
@@ -729,18 +741,16 @@ function sendStartMenu(chatId, userId) {
   const caption =
     "🧬 HarvestDex\n\n" +
     "Collectionne tes fiches, ajoute-les à Mon Dex et explore les catégories 🔥";
+
   const keyboard = buildStartKeyboard(userId);
 
-  return bot
-    .sendPhoto(chatId, START_IMAGE_URL, {
-      caption,
-      reply_markup: { inline_keyboard: keyboard },
-    })
-    .catch(() => {
-      return bot.sendMessage(chatId, caption, {
-        reply_markup: { inline_keyboard: keyboard },
-      });
-    });
+  return safeSendPhoto(chatId, START_IMAGE_URL, {
+    caption,
+    reply_markup: { inline_keyboard: keyboard },
+  }).then((r) => {
+    if (r) return r;
+    return safeSendMessage(chatId, caption, { reply_markup: { inline_keyboard: keyboard } });
+  });
 }
 
 bot.onText(/^\/start$/, (msg) => {
@@ -749,13 +759,15 @@ bot.onText(/^\/start$/, (msg) => {
   sendStartMenu(chatId, userId);
 });
 
-// ✅ /adminhelp (texte simple)
-bot.onText(/^\/admin(?:help)?$/, (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
-  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+bot.onText(/^\/myid$/, (msg) => {
+  safeSendMessage(msg.chat.id, `✅ user_id = ${msg.from?.id}\n✅ chat_id = ${msg.chat.id}`);
+});
 
-  const txt =
+// =========================
+// Admin help message (1 source of truth)
+// =========================
+function adminHelpText() {
+  return (
 `👑 Commandes Admin
 
 Ajout / édition
@@ -766,28 +778,108 @@ Ajout / édition
 • /del <id> — suppression rapide
 • /list (option: weed|hash|extraction|wpff|90u|indica...)
 
-Rare
+Rare / Legendary
 • /rare <id> (titre optionnel)
 • /unrare
 • /rareinfo
+(legendary: si tu l'as, on peut l'ajouter pareil)
 
-Partenaire
+Partenaire du moment
 • /partner <id> (titre optionnel)
 • /unpartner
 • /partnerinfo
 
 Debug
 • /dbtest
-• /myid
-`;
+• /myid`
+  );
+}
 
-  return bot.sendMessage(chatId, txt);
+bot.onText(/^\/adminhelp$|^\/admin$|^\/adminhelp(?:@.+)?$/i, (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+
+  const txt = adminHelpText();
+  return safeSendMessage(chatId, txt, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "➕ Ajouter (addform)", callback_data: "menu_addform" }],
+        [{ text: "✨ Rare", callback_data: "menu_rare" }, { text: "🤝 Partenaire", callback_data: "menu_partner" }],
+      ],
+    },
+  });
 });
 
-bot.onText(/^\/myid$/, (msg) => {
-  bot.sendMessage(msg.chat.id, `user_id = ${msg.from?.id}\nchat_id = ${msg.chat.id}`);
+// =========================
+// Rare + Partner commands (inchangés mais sans Markdown)
+// =========================
+bot.onText(/^\/rare\s+(\d+)(?:\s+([\s\S]+))?$/m, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+
+  try {
+    const id = Number(match[1]);
+    const title = (match[2] || "").trim();
+    const card = await dbGetCard(id);
+    if (!card) return safeSendMessage(chatId, "❌ ID introuvable.");
+    const updated = await dbSetFeatured(id, title || "✨ Rare du moment");
+    safeSendMessage(chatId, `✅ Rare activée: #${updated.id} — ${updated.name}\nTitre: ${updated.featured_title || "✨ Rare du moment"}`);
+  } catch (e) {
+    safeSendMessage(chatId, `❌ /rare: ${e.message}`);
+  }
+});
+bot.onText(/^\/unrare$/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+  try { await dbUnsetFeatured(); safeSendMessage(chatId, "✅ Rare désactivée."); } catch (e) { safeSendMessage(chatId, `❌ /unrare: ${e.message}`); }
+});
+bot.onText(/^\/rareinfo$/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+  try {
+    const c = await dbGetFeatured();
+    if (!c) return safeSendMessage(chatId, "Aucune Rare du moment actuellement.");
+    safeSendMessage(chatId, `✨ Rare actuelle: #${c.id} — ${c.name}\nTitre: ${c.featured_title || "✨ Rare du moment"}`);
+  } catch (e) { safeSendMessage(chatId, `❌ /rareinfo: ${e.message}`); }
 });
 
+bot.onText(/^\/partner\s+(\d+)(?:\s+([\s\S]+))?$/m, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+  try {
+    const id = Number(match[1]);
+    const title = (match[2] || "").trim();
+    const card = await dbGetCard(id);
+    if (!card) return safeSendMessage(chatId, "❌ ID introuvable.");
+    const updated = await dbSetPartner(id, title || "🤝 Partenaire du moment");
+    safeSendMessage(chatId, `✅ Partenaire activé: #${updated.id} — ${updated.name}\nTitre: ${updated.partner_title || "🤝 Partenaire du moment"}`);
+  } catch (e) { safeSendMessage(chatId, `❌ /partner: ${e.message}`); }
+});
+bot.onText(/^\/unpartner$/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+  try { await dbUnsetPartner(); safeSendMessage(chatId, "✅ Partenaire désactivé."); } catch (e) { safeSendMessage(chatId, `❌ /unpartner: ${e.message}`); }
+});
+bot.onText(/^\/partnerinfo$/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+  try {
+    const c = await dbGetPartner();
+    if (!c) return safeSendMessage(chatId, "ℹ️ Aucun partenaire actif.");
+    safeSendMessage(chatId, `🤝 Partenaire actif: #${c.id} — ${c.name}\nTitre: ${c.partner_title || "🤝 Partenaire du moment"}`);
+  } catch (e) { safeSendMessage(chatId, `❌ /partnerinfo: ${e.message}`); }
+});
+
+// =========================
+// /dbtest
+// =========================
 bot.onText(/^\/dbtest$/, async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from?.id;
@@ -795,116 +887,82 @@ bot.onText(/^\/dbtest$/, async (msg) => {
 
   try {
     assertSupabase();
-    const { error } = await sb.from("cards").select("id").limit(1);
-    if (error) throw error;
-    bot.sendMessage(chatId, "✅ Supabase OK (table cards accessible)");
+    // try both tables
+    const out = await runWithTable(TABLES.cards, async (t) => {
+      const { error } = await sb.from(t).select("id").limit(1);
+      if (error) throw error;
+      return t;
+    });
+    safeSendMessage(chatId, `✅ Supabase OK (table ${out} accessible)`);
   } catch (e) {
-    bot.sendMessage(chatId, `❌ Supabase KO: ${e.message}`);
+    safeSendMessage(chatId, `❌ Supabase KO: ${e.message}`);
   }
 });
 
 // =========================
-// Rare commands
+// callback_query handler (fix braces)
 // =========================
-bot.onText(/^\/rare\s+(\d+)(?:\s+([\s\S]+))?$/m, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
-  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+bot.on("callback_query", async (query) => {
+  const chatId = query?.message?.chat?.id;
+  const userId = query?.from?.id;
+  const data = query?.data || "";
+  if (!chatId) return;
 
-  try {
-    const id = Number(match[1]);
-    const title = (match[2] || "").trim();
+  try { await bot.answerCallbackQuery(query.id); } catch {}
 
-    const card = await dbGetCard(id);
-    if (!card) return bot.sendMessage(chatId, "❌ ID introuvable.");
+  if (data === "menu_back") return sendStartMenu(chatId, userId);
 
-    const updated = await dbSetFeatured(id, title || "✨ Shiny du moment");
-    bot.sendMessage(chatId, `✅ Rare activée: #${updated.id} — ${updated.name}`);
-  } catch (e) {
-    bot.sendMessage(chatId, `❌ /rare: ${e.message}`);
+  if (data === "menu_info") {
+    const caption =
+      "ℹ️ Informations\n\n" +
+      "HarvestDex est un projet éducatif.\n" +
+      "Aucune vente ici. Respecte les lois.\n\n" +
+      "Weed: indica/sativa/hybrid.\n" +
+      "Hash/Extraction/WPFF: microns + profils dans la fiche.";
+    return safeSendPhoto(chatId, INFO_IMAGE_URL, {
+      caption,
+      reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_back" }]] },
+    });
+  }
+
+  if (data === "menu_support") {
+    const caption = "🤝 Nous soutenir\n\nChoisis une option 👇";
+    return safeSendPhoto(chatId, SUPPORT_IMAGE_URL, {
+      caption,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📲 Nous suivre", callback_data: "support_follow" }],
+          [{ text: "💸 Don", callback_data: "support_donate" }],
+          [{ text: "🤝 Nos partenaires", callback_data: "support_partners" }],
+          [{ text: "⬅️ Retour", callback_data: "menu_back" }],
+        ],
+      },
+    });
+  }
+
+  if (data === "support_partners") {
+    return safeSendMessage(chatId, "🤝 Nos partenaires\n\nAucun partenaire pour le moment.");
+  }
+  if (data === "support_follow") return safeSendMessage(chatId, "📲 Nous suivre : (mets tes liens ici)");
+  if (data === "support_donate") return safeSendMessage(chatId, "💸 Don : (mets ton lien TWINT/crypto/etc ici)");
+
+  if (data === "menu_admin") {
+    if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+    return safeSendMessage(chatId, adminHelpText());
+  }
+  if (data === "menu_addform") {
+    if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+    return safeSendMessage(chatId, "➕ Pour ajouter : /addform");
+  }
+  if (data === "menu_rare") {
+    if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+    return safeSendMessage(chatId, "✨ Rare:\n/rare <id> (titre optionnel)\n/unrare\n/rareinfo");
+  }
+  if (data === "menu_partner") {
+    if (!isAdminUser(userId)) return safeSendMessage(chatId, "⛔ Pas autorisé.");
+    return safeSendMessage(chatId, "🤝 Partenaire:\n/partner <id> (titre optionnel)\n/unpartner\n/partnerinfo");
   }
 });
-
-bot.onText(/^\/unrare$/, async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
-  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    await dbUnsetFeatured();
-    bot.sendMessage(chatId, "✅ Rare désactivée.");
-  } catch (e) {
-    bot.sendMessage(chatId, `❌ /unrare: ${e.message}`);
-  }
-});
-
-bot.onText(/^\/rareinfo$/, async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
-  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    const c = await dbGetFeatured();
-    if (!c) return bot.sendMessage(chatId, "Aucune Rare du moment actuellement.");
-    bot.sendMessage(chatId, `Rare actuelle: #${c.id} — ${c.name}`);
-  } catch (e) {
-    bot.sendMessage(chatId, `❌ /rareinfo: ${e.message}`);
-  }
-});
-
-// =========================
-// Partner commands
-// =========================
-bot.onText(/^\/partner\s+(\d+)(?:\s+([\s\S]+))?$/m, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
-  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    const id = Number(match[1]);
-    const title = (match[2] || "").trim();
-
-    const card = await dbGetCard(id);
-    if (!card) return bot.sendMessage(chatId, "❌ ID introuvable.");
-
-    const updated = await dbSetPartner(id, title || "🤝 Partenaire du moment");
-    bot.sendMessage(chatId, `✅ Partenaire activé: #${updated.id} — ${updated.name}`);
-  } catch (e) {
-    bot.sendMessage(chatId, `❌ /partner: ${e.message}`);
-  }
-});
-
-bot.onText(/^\/unpartner$/, async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
-  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    await dbUnsetPartner();
-    bot.sendMessage(chatId, "✅ Partenaire désactivé.");
-  } catch (e) {
-    bot.sendMessage(chatId, `❌ /unpartner: ${e.message}`);
-  }
-});
-
-bot.onText(/^\/partnerinfo$/, async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
-  if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-
-  try {
-    const c = await dbGetPartner();
-    if (!c) return bot.sendMessage(chatId, "Aucun partenaire actif.");
-    bot.sendMessage(chatId, `Partenaire actif: #${c.id} — ${c.name}`);
-  } catch (e) {
-    bot.sendMessage(chatId, `❌ /partnerinfo: ${e.message}`);
-  }
-});
-
-// =========================
-// NOTE: tes wizards / addform / editform / delform existent déjà dans ta base.
-// Ici on garde ton fichier actuel tel quel si tu l'as (sinon on peut le réintégrer).
-// =========================
 
 // =========================
 // Start server last
