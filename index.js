@@ -142,8 +142,8 @@ async function getSubcategoriesSafe() {
     return rows;
   } catch (e) {
     // fallback si table pas prête
-    _cache.subcategories = { ts: now, data: DEFAULT_SUBCATEGORIES };
-    return DEFAULT_SUBCATEGORIES;
+    _cache.subcategories = { ts: now, data: [] };
+    return [];
   }
 }
 
@@ -530,37 +530,49 @@ bot.onText(/^\/myid$/, (msg) => {
   bot.sendMessage(msg.chat.id, `✅ user_id = ${msg.from?.id}\n✅ chat_id = ${msg.chat.id}`);
 });
 
-bot.onText(/^\/adminhelp$/, (msg) => {
+bot.onText(/^\/admin(?:help)?$/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from?.id;
   if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
 
   const txt =
-    `👑 *Commandes Admin*
+`👑 *Commandes Admin*
 
-✅ /dbtest *(test Supabase)*
-✅ /stat *(stats)*
-✅ /list [hash|weed|extraction|wpff|120u|90u|73u|45u|indica|sativa|hybrid]
-✅ /addform *(ajout guidé)*
-✅ /editform *(modif guidée)*
-✅ /delform *(suppression guidée)*
-✅ /edit id field value
-✅ /del id
+*Ajout / édition*
+• /addform — ajouter une fiche (avec sous-catégorie + farm)
+• /edit id — éditer une fiche
+• /delete id — supprimer une fiche
 
-✨ *Rare du moment*
-✅ /rare id (titre optionnel)
-✅ /unrare
-✅ /rareinfo
+*Rare / Legendary*
+• /rare id (titre optionnel)
+• /unrare
+• /rareinfo
+• /legendary id (titre optionnel)
+• /unlegendary
+• /legendaryinfo
 
-🤝 *Partenaire du moment*
-✅ /partner id (titre optionnel)
-✅ /unpartner
-✅ /partnerinfo
+*Partenaire du moment*
+• /partner id (titre optionnel)
+• /unpartner
+• /partnerinfo
 
-*fields /edit:* name,type,micron,weed_kind,thc,description,img,advice,terpenes,aroma,effects`;
+*Debug*
+• /ping
+• /stats`;
 
-  bot.sendMessage(chatId, txt, { parse_mode: "Markdown" });
+  return bot.sendMessage(chatId, txt, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "➕ Ajouter (addform)", callback_data: "menu_addform" }],
+        [{ text: "✨ Rare du moment", callback_data: "menu_rare" }, { text: "👑 Legendary", callback_data: "menu_legendary" }],
+        [{ text: "🤝 Partenaire", callback_data: "menu_partner" }],
+        [{ text: "📊 Stats", callback_data: "menu_stats" }],
+      ],
+    },
+  });
 });
+
 
 bot.onText(/^\/dbtest$/, async (msg) => {
   const chatId = msg.chat.id;
@@ -1141,10 +1153,45 @@ bot.on("callback_query", async (query) => {
 
   if (data === "menu_admin") {
     if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, "🧰 Admin: utilise /adminhelp", {
+    return bot.sendMessage(chatId, "🧰 Admin: tape /admin pour voir toutes les commandes.", {
       reply_markup: { inline_keyboard: [[{ text: "⬅️ Retour", callback_data: "menu_back" }]] },
     });
+  
+  if (data === "menu_addform") {
+    if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+    return bot.sendMessage(chatId, "➕ Pour ajouter une fiche : utilise /addform (assistant guidé).");
   }
+
+  if (data === "menu_rare") {
+    if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+    return bot.sendMessage(chatId, "✨ Rare du moment :
+• /rare id (titre optionnel)
+• /unrare
+• /rareinfo");
+  }
+
+  if (data === "menu_legendary") {
+    if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+    return bot.sendMessage(chatId, "👑 Legendary :
+• /legendary id (titre optionnel)
+• /unlegendary
+• /legendaryinfo");
+  }
+
+  if (data === "menu_partner") {
+    if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+    return bot.sendMessage(chatId, "🤝 Partenaire du moment :
+• /partner id (titre optionnel)
+• /unpartner
+• /partnerinfo");
+  }
+
+  if (data === "menu_stats") {
+    if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
+    return bot.sendMessage(chatId, "📊 Stats : /stats");
+  }
+
+}
 
   // ===== WIZARDS =====
   if (isAdminUser(userId) && data === "add_cancel") return addCancel(chatId);

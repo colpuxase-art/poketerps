@@ -19,39 +19,20 @@
 
   const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
 
-  const badge = (label, kind) => `<span class="hx-badge hx-badge--${kind}">${safeStr(label)}</span>`;
 
-  function cardBadgesHtml(c) {
-    const out = [];
-    const t = norm(c.type);
+const badge = (label, kind) => `<span class="hx-badge hx-badge--${kind}">${safeStr(label)}</span>`;
 
-    // category
-    out.push(badge(typeLabel(t), "type"));
+function cardBadgesHtml(c) {
+  const out = [];
+  const t = norm(c.type);
 
-    // subcategory label (DB)
-    if (c.subcategory_label) out.push(badge(c.subcategory_label, "sub"));
-
-    // micron
-    if (t !== "weed" && c.micron) out.push(badge(c.micron, "micron"));
-
-    // weed_kind
-    if (t === "weed" && c.weed_kind) out.push(badge(weedKindLabel(norm(c.weed_kind)), "weedkind"));
-
-    // farm
-    if (c.farm?.name) out.push(badge(c.farm.name, "farm"));
-
-    return out.join("");
-  }
-
-  function farmLinksText(farm) {
-    if (!farm) return "";
-    const ig = farm.instagram ? safeStr(farm.instagram).replace(/^@/, "") : "";
-    const website = farm.website ? safeStr(farm.website) : "";
-    const parts = [];
-    if (ig) parts.push(`Instagram: ${ig}`);
-    if (website) parts.push(`Site: ${website}`);
-    return parts.length ? ` • ${parts.join(" • ")}` : "";
-  }
+  out.push(badge(typeLabel(t), "type"));
+  if (c.subcategory_label) out.push(badge(c.subcategory_label, "sub"));
+  if (t !== "weed" && c.micron) out.push(badge(c.micron, "micron"));
+  if (t === "weed" && c.weed_kind) out.push(badge(weedKindLabel(norm(c.weed_kind)), "weedkind"));
+  if (c.farm?.name) out.push(badge(c.farm.name, "farm"));
+  return out.join("");
+}
 
 
   function cardDesc(c) {
@@ -136,25 +117,7 @@
   // badges in details
   const pokeBadges = $("pokeBadges");
 
-  // MyDex filters
-  const myDexTypeFilter = $("myDexTypeFilter");
-  const myDexSubFilter = $("myDexSubFilter");
-  const myDexFarmFilter = $("myDexFarmFilter");
-
-
-  // Partner box
-  const partnerBox = $("partnerBox");
-  const partnerImg = $("partnerImg");
-  const partnerTitle = $("partnerTitle");
-  const partnerName = $("partnerName");
-  const partnerMeta = $("partnerMeta");
-  const partnerLine = $("partnerLine");
-  const partnerViewBtn = $("partnerViewBtn");
-
-  // badges in details
-  const pokeBadges = $("pokeBadges");
-
-  // MyDex filters
+  // MyDex filters (optionnels)
   const myDexTypeFilter = $("myDexTypeFilter");
   const myDexSubFilter = $("myDexSubFilter");
   const myDexFarmFilter = $("myDexFarmFilter");
@@ -273,10 +236,9 @@
         subcategory_id: c.subcategory_id ?? null,
         subcategory_label: c.subcategory_label ?? null,
         subcategory_type: c.subcategory_type ?? null,
-        // compat ancienne logique (utilisée par le Dex pour filtrer)
         subcategory: (c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null),
         farm_id: c.farm_id ?? null,
-        farm: c.farm ?? null,
+        farm: c.farm ?? null, // ✅ compat
       }));
 
       pokedex = mapped.length ? mapped : fallbackPokedex;
@@ -315,7 +277,12 @@
         effects: Array.isArray(c.effects) ? c.effects : [],
         advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
         featured_title: c.featured_title || "✨ Shiny du moment",
-        subcategory: c.subcategory || c.sub_category || null,
+        subcategory_id: c.subcategory_id ?? null,
+        subcategory_label: c.subcategory_label ?? null,
+        subcategory_type: c.subcategory_type ?? null,
+        subcategory: (c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null),
+        farm_id: c.farm_id ?? null,
+        farm: c.farm ?? null,
       };
 
       renderFeatured();
@@ -356,81 +323,7 @@
     if (themeBtn) themeBtn.textContent = isShiny ? "✨ Shiny ON" : "✨ Shiny";
     toast(isShiny ? "✨ Mode Shiny activé" : "✨ Mode Shiny désactivé");
     haptic("medium");
-  
-
-  async function loadFarms() {
-    try {
-      const res = await fetch("/api/farms", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      farms = Array.isArray(data) ? data : [];
-    } catch (e) {
-      console.warn("⚠️ /api/farms KO", e);
-      farms = [];
-    }
   }
-
-  async function loadPartner() {
-    try {
-      const res = await fetch("/api/partner", { cache: "no-store" });
-      if (!res.ok) {
-        partner = null;
-        if (partnerBox) partnerBox.style.display = "none";
-        return;
-      }
-      const c = await res.json();
-      if (!c) {
-        partner = null;
-        if (partnerBox) partnerBox.style.display = "none";
-        return;
-      }
-      partner = {
-        id: Number(c.id) || c.id,
-        name: c.name || "Sans nom",
-        type: c.type || "hash",
-        thc: c.thc || "—",
-        desc: c.desc ?? c.description ?? "—",
-        img: c.img || "https://i.imgur.com/0HqWQvH.png",
-        terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
-        aroma: Array.isArray(c.aroma) ? c.aroma : [],
-        effects: Array.isArray(c.effects) ? c.effects : [],
-        advice: c.advice || "",
-        micron: c.micron || null,
-        weed_kind: c.weed_kind || null,
-        subcategory_id: c.subcategory_id ?? null,
-        subcategory_label: c.subcategory_label ?? null,
-        subcategory_type: c.subcategory_type ?? null,
-        subcategory: (c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null),
-        farm_id: c.farm_id ?? null,
-        farm: c.farm ?? null,
-        partner_title: c.partner_title || "🤝 Partenaire du moment",
-      };
-
-      renderPartner();
-    } catch (e) {
-      console.warn("⚠️ loadPartner KO", e);
-      partner = null;
-      if (partnerBox) partnerBox.style.display = "none";
-    }
-  }
-
-  function renderPartner() {
-    if (!partnerBox || !partner) return;
-    partnerBox.style.display = "block";
-    if (partnerImg) partnerImg.src = partner.img;
-    if (partnerTitle) partnerTitle.textContent = partner.partner_title || "🤝 Partenaire du moment";
-    if (partnerName) partnerName.textContent = partner.name;
-    if (partnerMeta) partnerMeta.innerHTML = `#${partner.id} <span class="ms-1">${cardBadgesHtml(partner)}</span>`;
-    if (partnerLine) partnerLine.textContent = `🧬 ${cardDesc(partner)}`;
-
-    partnerViewBtn?.addEventListener("click", () => {
-      selectCard(partner, true);
-      toast("🤝 Partenaire affiché !");
-      haptic("medium");
-    });
-  }
-
-}
 
   /* ================= UI LOADING ================= */
   function setLoading(isLoading) {
@@ -462,6 +355,77 @@
       sparklesWrap.appendChild(el);
     });
   }
+
+
+async function loadFarms() {
+  try {
+    const res = await fetch("/api/farms", { cache: "no-store" });
+    const data = await res.json();
+    farms = Array.isArray(data) ? data : [];
+  } catch (e) {
+    farms = [];
+  }
+}
+
+async function loadPartner() {
+  try {
+    const res = await fetch("/api/partner", { cache: "no-store" });
+    if (!res.ok) {
+      partner = null;
+      if (partnerBox) partnerBox.style.display = "none";
+      return;
+    }
+    const c = await res.json();
+    if (!c) {
+      partner = null;
+      if (partnerBox) partnerBox.style.display = "none";
+      return;
+    }
+
+    partner = {
+      id: Number(c.id) || c.id,
+      name: c.name || "Sans nom",
+      type: c.type || "hash",
+      micron: c.micron ?? null,
+      weed_kind: c.weed_kind ?? null,
+      thc: c.thc || "—",
+      desc: cardDesc(c),
+      img: c.img || "https://i.imgur.com/0HqWQvH.png",
+      terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
+      aroma: Array.isArray(c.aroma) ? c.aroma : [],
+      effects: Array.isArray(c.effects) ? c.effects : [],
+      advice: c.advice || "",
+      subcategory_id: c.subcategory_id ?? null,
+      subcategory_label: c.subcategory_label ?? null,
+      subcategory_type: c.subcategory_type ?? null,
+      subcategory: (c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null),
+      farm_id: c.farm_id ?? null,
+      farm: c.farm ?? null,
+      partner_title: c.partner_title || "🤝 Partenaire du moment",
+    };
+
+    renderPartner();
+  } catch {
+    partner = null;
+    if (partnerBox) partnerBox.style.display = "none";
+  }
+}
+
+function renderPartner() {
+  if (!partnerBox || !partner) return;
+  partnerBox.style.display = "block";
+  if (partnerImg) partnerImg.src = partner.img;
+  if (partnerTitle) partnerTitle.textContent = partner.partner_title || "🤝 Partenaire du moment";
+  if (partnerName) partnerName.textContent = partner.name;
+  if (partnerMeta) partnerMeta.innerHTML = `#${partner.id} <span class="ms-1">${cardBadgesHtml(partner)}</span>`;
+  if (partnerLine) partnerLine.textContent = `🧬 ${cardDesc(partner)}`;
+
+  partnerViewBtn?.addEventListener("click", () => {
+    selectCard(partner, true);
+    toast("🤝 Partenaire affiché !");
+    haptic("medium");
+  });
+}
 
   function extraText(card) {
     const t = norm(card.type);
@@ -509,108 +473,131 @@
     return btn;
   }
 
-  function renderSubChips() {
-    if (!subChips) return;
-    subChips.innerHTML = "";
+  
+function renderSubChips() {
+  if (!subChips) return;
+  subChips.innerHTML = "";
 
-    if (activeType === "all") {
-      activeSub = "all";
-      subChips.style.display = "none";
-      return;
-    }
-
-    subChips.style.display = "flex";
-
-    let options = [{ label: "Tous", value: "all" }];
-
-    if (activeType === "farm") {
-      const fs = (farms || []).map(f => ({ label: f.name, value: String(f.id) }));
-      options = options.concat(fs);
-      if (activeSub !== "all" && !fs.some((x) => x.value === String(activeSub))) activeSub = "all";
-    } else if (activeType === "weed") {
-      options = options.concat([
-        { label: "Indica", value: "indica" },
-        { label: "Sativa", value: "sativa" },
-        { label: "Hybrid", value: "hybrid" },
-      ]);
-      if (activeSub !== "all" && !["indica","sativa","hybrid"].includes(activeSub)) activeSub = "all";
-    } else {
-      const subs = (subcategories || [])
-        .filter((s) => s.type === activeType)
-        .sort((a, b) => (a.sort || 0) - (b.sort || 0))
-        .map((s) => ({ label: s.label, value: s.id }));
-
-      options = options.concat(subs);
-
-      if (activeSub !== "all" && !subs.some((s) => s.value === activeSub)) activeSub = "all";
-    }
-
-    options.forEach((opt) => {
-      const btn = chipBtn(opt.label, opt.value, activeSub === opt.value);
-      btn.addEventListener("click", () => {
-        activeSub = opt.value;
-        renderSubChips();
-        renderList();
-        haptic("light");
-      });
-      subChips.appendChild(btn);
-    });
+  if (activeType === "all") {
+    activeSub = "all";
+    subChips.style.display = "none";
+    return;
   }
 
-  /* ================= FILTER + SORT ================= */
-  function matchesFilters(card) {
-    const q = norm(searchInput?.value || "");
-    const t = norm(card.type);
+  subChips.style.display = "flex";
 
-    if (activeType !== "all" && activeType !== "farm" && t !== activeType) return false;
+  let options = [{ label: "Tous", value: "all" }];
 
-    // ✅ Farm view: filtre par farm_id (toutes catégories)
-    if (activeType === \"farm\") {
-      if (activeSub !== \"all\") {
-        if (String(card.farm_id || \"\") !== String(activeSub)) return false;
-      }
+  if (activeType === "farm") {
+    const fs = (farms || []).map((f) => ({ label: f.name, value: "farm:" + String(f.id) }));
+    options = options.concat(fs);
+    if (activeSub !== "all" && !fs.some((x) => String(x.value) === String(activeSub))) activeSub = "all";
+  } else if (activeType === "weed") {
+    options = options.concat([
+      { label: "Indica", value: "wk:indica" },
+      { label: "Sativa", value: "wk:sativa" },
+      { label: "Hybrid", value: "wk:hybrid" },
+    ]);
+
+    const subs = (subcategories || [])
+      .filter((s) => s.type === "weed")
+      .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+      .map((s) => ({ label: s.label, value: "sc:" + String(s.id) }));
+
+    options = options.concat(subs);
+
+    if (
+      activeSub !== "all" &&
+      !["wk:indica", "wk:sativa", "wk:hybrid"].includes(activeSub) &&
+      !subs.some((x) => String(x.value) === String(activeSub))
+    ) activeSub = "all";
+  } else {
+    const subs = (subcategories || [])
+      .filter((s) => s.type === activeType)
+      .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+      .map((s) => ({ label: s.label, value: "sc:" + String(s.id) }));
+
+    options = options.concat(subs);
+
+    if (activeSub !== "all" && !subs.some((s) => String(s.value) === String(activeSub))) activeSub = "all";
+  }
+
+  options.forEach((opt) => {
+    const btn = chipBtn(opt.label, opt.value, String(activeSub) === String(opt.value));
+    btn.addEventListener("click", () => {
+      activeSub = String(opt.value);
+      renderSubChips();
+      renderList();
+      haptic("light");
+    });
+    subChips.appendChild(btn);
+  });
+}
+
+/* ================= FILTER + SORT ================= */
+
+  
+function matchesFilters(card) {
+  const q = norm(searchInput?.value || "");
+  const t = norm(card.type);
+
+  // type filter
+  if (activeType !== "all" && activeType !== "farm" && t !== activeType) return false;
+
+  // farm view: filtre par farm_id (toutes catégories)
+  if (activeType === "farm") {
+    if (activeSub !== "all") {
+      const fid = String(activeSub).startsWith("farm:") ? String(activeSub).slice(5) : String(activeSub);
+      if (String(card.farm_id || "") !== fid) return false;
     }
+  } else {
+    // sous-catégories / filtres :
+    // - weed : weed_kind (wk:*) OU subcategory_id (sc:*)
+    // - autres : subcategory_id (sc:*)
+    if (activeSub !== "all") {
+      const v = String(activeSub);
 
-    if (activeType !== "farm") {
-    // ✅ sous-catégories :
-    // - weed : weed_kind
-    // - autres : card.subcategory (champ conseillé)
-    if (activeType === "weed") {
-      if (activeSub !== "all") {
-        if (norm(card.weed_kind) !== activeSub) return false;
-      }
-    } else {
-      if (activeSub !== "all") {
-        const sc = norm(card.subcategory_id ?? card.subcategory);
-        // si pas de subcategory en DB, on ne casse pas le Dex :
-        if (sc && sc !== activeSub) return false;
-        if (!sc) {
-          // si aucune donnée, on laisse passer (soft filter)
+      if (activeType === "weed") {
+        if (v.startsWith("wk:")) {
+          const wk = v.slice(3);
+          if (norm(card.weed_kind) !== wk) return false;
+        } else if (v.startsWith("sc:")) {
+          const scId = v.slice(3);
+          if (String(card.subcategory_id || "") !== scId) return false;
+        }
+      } else {
+        if (v.startsWith("sc:")) {
+          const scId = v.slice(3);
+          if (String(card.subcategory_id || "") !== scId) return false;
         }
       }
     }
-    }
-
-    if (showFavOnly) {
-      if (!isFavorited(card.id)) return false;
-    }
-
-    if (!q) return true;
-
-    const bag = [
-      card.name,
-      cardDesc(card),
-      card.thc,
-      ...(card.terpenes || []),
-      ...(card.aroma || []),
-      ...(card.effects || []),
-      card.advice,
-    ].map(norm).join(" ");
-
-    return bag.includes(q);
   }
 
-  function sortCards(arr) {
+  if (showFavOnly) {
+    if (!isFavorited(card.id)) return false;
+  }
+
+  if (!q) return true;
+
+  const bag = [
+    card.name,
+    cardDesc(card),
+    card.thc,
+    ...(card.terpenes || []),
+    ...(card.aroma || []),
+    ...(card.effects || []),
+    card.advice,
+    card.subcategory_label,
+    card.farm?.name,
+  ]
+    .map(norm)
+    .join(" ");
+
+  return bag.includes(q);
+}
+
+function sortCards(arr) {
     const copy = [...arr];
     if (sortMode === "az") {
       copy.sort((a, b) => safeStr(a.name).localeCompare(safeStr(b.name)));
@@ -682,8 +669,7 @@
             <img src="${c.img}" alt="" width="42" height="42" style="border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,.10);">
             <div>
               <div class="fw-bold">${safeStr(c.name)}</div>
-              <div class="text-secondary small">#${c.id}</div>
-              <div class="hx-card-meta">${cardBadgesHtml(c)}</div>
+              <div class="text-secondary small">#${c.id} • ${typeLabel(c.type)}${subTxt}</div>
             </div>
           </div>
           <div class="text-warning">${isFavorited(c.id) ? "❤️" : ""}</div>
@@ -712,11 +698,17 @@
     if (placeholder) placeholder.style.display = "none";
 
     if (pokeType) {
-      pokeType.textContent = typeLabel(card.type);
-    }
-
-    if (pokeBadges) {
-      pokeBadges.innerHTML = cardBadgesHtml(card);
+      const t = norm(card.type);
+      let sub = "";
+      if (t === "weed" && card.weed_kind) sub = ` • ${weedKindLabel(norm(card.weed_kind))}`;
+      const sc = norm(card.subcategory);
+      if (sc && t !== "weed") {
+        const found = (subcategories || []).find(x => x.id === sc);
+        if (found) sub = ` • ${found.label}`;
+      }
+      // ✅ micron affiché dans la fiche (pas en sous chips)
+      const micron = (t !== "weed" && card.micron) ? ` • ${norm(card.micron)}` : "";
+      pokeType.textContent = `${typeLabel(card.type)}${sub}${micron}`;
     }
 
     if (pokeThc) pokeThc.textContent = safeStr(card.thc || "—");
@@ -764,7 +756,12 @@
           aroma: Array.isArray(c.aroma) ? c.aroma : [],
           effects: Array.isArray(c.effects) ? c.effects : [],
           advice: c.advice || "",
-          subcategory: c.subcategory || c.sub_category || null,
+          subcategory_id: c.subcategory_id ?? null,
+        subcategory_label: c.subcategory_label ?? null,
+        subcategory_type: c.subcategory_type ?? null,
+        subcategory: (c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null),
+        farm_id: c.farm_id ?? null,
+        farm: c.farm ?? null,
         }));
 
         // sync local favs from server set
@@ -783,72 +780,26 @@
 
     myDexEmpty.style.display = "none";
 
-    myDexCards = cards;
-
-    populateMyDexFilters();
-    renderMyDexFiltered();
-  }
-
-  function populateMyDexFilters() {
-    // type options
-    if (myDexTypeFilter) {
-      const types = Array.from(new Set((myDexCards || []).map(c => norm(c.type)).filter(Boolean))).sort();
-      myDexTypeFilter.innerHTML = `<option value="all">Toutes catégories</option>` + types.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join("");
-      myDexTypeFilter.value = myDexType;
-    }
-
-    // farm options
-    if (myDexFarmFilter) {
-      const fm = (myDexCards || []).map(c => c.farm?.id ? String(c.farm.id) : null).filter(Boolean);
-      const uniq = Array.from(new Set(fm));
-      const labelById = new Map((farms || []).map(f => [String(f.id), f.name]));
-      myDexFarmFilter.innerHTML = `<option value="all">Toutes farms</option>` + uniq.sort((a,b)=> (labelById.get(a)||"").localeCompare(labelById.get(b)||"")).map(id => `<option value="${id}">${safeStr(labelById.get(id) || ("Farm " + id))}</option>`).join("");
-      myDexFarmFilter.value = myDexFarm;
-    }
-
-    // subcategory options
-    if (myDexSubFilter) {
-      const sc = (myDexCards || []).map(c => c.subcategory_id ? String(c.subcategory_id) : null).filter(Boolean);
-      const uniq = Array.from(new Set(sc));
-      const labelById = new Map((subcategories || []).map(s => [String(s.id), s.label]));
-      myDexSubFilter.innerHTML = `<option value="all">Toutes sous-catégories</option>` + uniq.sort((a,b)=> (labelById.get(a)||"").localeCompare(labelById.get(b)||"")).map(id => `<option value="${id}">${safeStr(labelById.get(id) || id)}</option>`).join("");
-      myDexSubFilter.value = myDexSub;
-    }
-  }
-
-  function renderMyDexFiltered() {
-    if (!myDexList || !myDexEmpty) return;
-    const filtered = (myDexCards || []).filter((c) => {
-      if (myDexType !== "all" && norm(c.type) !== myDexType) return false;
-      if (myDexFarm !== "all" && String(c.farm?.id || c.farm_id || "") !== String(myDexFarm)) return false;
-      if (myDexSub !== "all" && String(c.subcategory_id || "") !== String(myDexSub)) return false;
-      return true;
-    });
-
-    myDexList.innerHTML = "";
-    myDexEmpty.style.display = filtered.length ? "none" : "block";
-
-    filtered.forEach((c) => {
+    cards.forEach((c) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "list-group-item list-group-item-action bg-black text-white border-secondary";
       btn.style.borderRadius = "14px";
       btn.style.marginBottom = "8px";
-
       btn.innerHTML = `
         <div class="d-flex align-items-center justify-content-between gap-2">
           <div class="d-flex align-items-center gap-2">
-            <img src="${c.img}" alt="" width="42" height="42" style="border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,10);">
+            <img src="${c.img}" alt="" width="42" height="42" style="border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,.10);">
             <div>
               <div class="fw-bold">${safeStr(c.name)}</div>
-              <div class="text-secondary small">#${c.id}</div>
-              <div class="hx-card-meta">${cardBadgesHtml(c)}</div>
+              <div class="text-secondary small">#${c.id} • ${typeLabel(c.type)}</div>
             </div>
           </div>
           <div class="text-warning">❤️</div>
         </div>
       `;
       btn.addEventListener("click", () => {
+        // retour Dex + select
         document.getElementById("btnNavDex")?.click?.();
         selectCard(c, true);
       });
