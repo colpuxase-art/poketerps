@@ -62,7 +62,6 @@
 
   const themeBtn = $("themeBtn");
   const sortSelect = $("sortSelect");
-  const farmSelect = $("farmSelect");
   const favToggle = $("favToggle");
   const favBtn = $("favBtn");
 
@@ -90,28 +89,6 @@
   const featuredCount = $("featuredCount");
   const sparklesWrap = $("sparkles");
 
-  // Partner box
-  const partnerBox = $("partnerBox");
-  const partnerImg = $("partnerImg");
-  const partnerTitle = $("partnerTitle");
-  const partnerName = $("partnerName");
-  const partnerMeta = $("partnerMeta");
-  const partnerLine = $("partnerLine");
-  const partnerViewBtn = $("partnerViewBtn");
-
-  // Sections
-  const sectionsWrap = $("sectionsWrap");
-  const popularList = $("popularList");
-  const trendingList = $("trendingList");
-  const newestList = $("newestList");
-  const popularSeeAll = $("popularSeeAll");
-  const trendingSeeAll = $("trendingSeeAll");
-  const newestSeeAll = $("newestSeeAll");
-
-  // Admin web
-  const adminWrap = $("adminWrap");
-  const adminBtnWeb = $("adminBtnWeb");
-
   // MyDex/Profile panels
   const myDexList = $("myDexList");
   const myDexEmpty = $("myDexEmpty");
@@ -128,8 +105,6 @@
   let pokedex = [];
   let featured = null;
   let subcategories = [];
-  let farms = [];
-  let activeFarm = "all";
 
   let activeType = "all";
   let activeSub = "all"; // all | indica/sativa/hybrid | subcategory id
@@ -679,27 +654,6 @@
   window.loadMyDex = loadMyDex;
   window.loadProfile = loadProfile;
 
-  /* ================= ADMIN WEB ================= */
-  const ADMIN_IDS = new Set(["6675436692"]);
-  if (tgUserId && ADMIN_IDS.has(String(tgUserId))) {
-    if (adminWrap) adminWrap.style.display = "block";
-    adminBtnWeb?.addEventListener("click", () => {
-      const txt = 
-`👑 Commandes Admin
-
-• /addform — ajouter une fiche
-• /editform — modifier via menus
-• /delform — supprimer via menus
-• /rare <id> (titre optionnel)
-• /unrare
-• /partner <id> (titre optionnel)
-• /unpartner
-• /dbtest
-• /myid`;
-      alert(txt);
-    });
-  }
-
   /* ================= EVENTS ================= */
   // category chips
   document.querySelectorAll(".chip").forEach((b) => {
@@ -808,7 +762,7 @@
     applyThemeFromStorage();
     setLoading(true);
 
-    await Promise.all([loadSubcategories(), loadFarms(), loadCards()]);
+    await Promise.all([loadSubcategories(), loadCards()]);
     await loadFeatured();
 
     renderSubChips();
