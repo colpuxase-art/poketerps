@@ -34,7 +34,7 @@ const WEBHOOK_URL = (process.env.WEBHOOK_URL || "").trim();
 
 // Images
 const START_IMAGE_URL =
-  process.env.START_IMAGE_URL || "https://i.postimg.cc/9Qp0JmJY/harvestdex-start.jpg";
+  process.env.START_IMAGE_URL || "https://www.sierre.ch/data/images/accroches/pratique/habitant/integration/wpThumbnails/Bienvenue-clibrededroitAdobeStock.jpg";
 const INFO_IMAGE_URL =
   process.env.INFO_IMAGE_URL || "https://i.postimg.cc/3w3qj7tK/harvestdex-info.jpg";
 const SUPPORT_IMAGE_URL =
