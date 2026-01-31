@@ -111,25 +111,213 @@ const _cache = {
 };
 const CACHE_TTL_MS = 60_000;
 
+// =========================
+// DB: compat FR/EN (tables + colonnes)
+// =========================
+const TABLES = {
+  cards: ["cartes", "cards"],
+  favorites: ["favoris", "favorites"],
+  farms: ["fermes", "farms"],
+  subcategories: ["subcategories", "sous-catégories", "sous_categories", "sous-categories"],
+};
+
+function isMissingRelation(err) {
+  const m = String(err?.message || "").toLowerCase();
+  return m.includes("does not exist") || m.includes("relation") || m.includes("not found");
+}
+
+async function runWithTable(candidates, fn) {
+  let lastErr = null;
+  for (const t of candidates) {
+    try {
+      return await fn(t);
+    } catch (e) {
+      lastErr = e;
+      if (isMissingRelation(e)) continue;
+      throw e;
+    }
+  }
+  throw lastErr || new Error("Table introuvable");
+}
+
+function pick(obj, keys) {
+  for (const k of keys) {
+    if (obj && Object.prototype.hasOwnProperty.call(obj, k) && obj[k] !== undefined) return obj[k];
+  }
+  return undefined;
+}
+
+function normalizeArray(v) {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.filter(Boolean);
+  // parfois stocké en texte "a,b,c"
+  if (typeof v === "string") return v.split(",").map((s) => s.trim()).filter(Boolean);
+  return [];
+}
+
+function normalizeCardRow(r) {
+  if (!r) return null;
+
+  const id = pick(r, ["id"]);
+  const name = pick(r, ["nom", "name"]) ?? "";
+  const type = pick(r, ["taper", "type"]) ?? "";
+  const thc = pick(r, ["THC", "thc"]) ?? "";
+  const description = pick(r, ["description", "desc"]) ?? "";
+  const img = pick(r, ["image", "img"]) ?? "";
+  const advice = pick(r, ["conseil", "advice"]) ?? "";
+  const micron = pick(r, ["micron"]) ?? null;
+
+  const terpenes = normalizeArray(pick(r, ["terpènes", "terpenes"]));
+  const aroma = normalizeArray(pick(r, ["arôme", "arome", "aroma"]));
+  const effects = normalizeArray(pick(r, ["effets", "effects"]));
+
+  const season = pick(r, ["saison", "season"]) ?? null;
+
+  const weed_kind = pick(r, ["type_de_mauvaise_herbe", "weed_kind"]) ?? null;
+
+  const subcategory_id = pick(r, ["sous-catégorie_id", "subcategory_id"]) ?? null;
+  const farm_id = pick(r, ["ferme_id", "farm_id"]) ?? null;
+
+  const rarity = pick(r, ["rareté", "rarity"]) ?? null;
+
+  const is_featured = Boolean(pick(r, ["est_mis_en_avant", "is_featured"]) ?? false);
+  const featured_title = pick(r, ["titre_vedette", "featured_title"]) ?? null;
+
+  const is_partner = Boolean(pick(r, ["est_partenaire", "is_partner"]) ?? false);
+  const partner_title = pick(r, ["titre_partenaire", "partner_title"]) ?? null;
+
+  return {
+    id,
+    name,
+    type,
+    thc,
+    description,
+    img,
+    advice,
+    micron,
+    terpenes,
+    aroma,
+    effects,
+    season,
+    weed_kind,
+    subcategory_id,
+    farm_id,
+    rarity,
+    is_featured,
+    featured_title,
+    is_partner,
+    partner_title,
+  };
+}
+
+function denormalizeCardPayload(payload, tableName) {
+  // payload arrive en schéma "front/bot" (anglais)
+  // On convertit selon la table cible.
+  const isFR = tableName === "cartes";
+  const out = {};
+
+  const name = payload.name ?? payload.nom;
+  const type = payload.type ?? payload.taper;
+  const thc = payload.thc ?? payload.THC;
+  const description = payload.description;
+  const img = payload.img ?? payload.image;
+  const advice = payload.advice ?? payload.conseil;
+  const micron = payload.micron ?? null;
+  const terpenes = payload.terpenes ?? [];
+  const aroma = payload.aroma ?? payload.arome ?? [];
+  const effects = payload.effects ?? [];
+  const season = payload.season ?? payload.saison ?? null;
+
+  const weed_kind = payload.weed_kind ?? payload.type_de_mauvaise_herbe ?? null;
+  const subcategory_id = payload.subcategory_id ?? payload["sous-catégorie_id"] ?? null;
+  const farm_id = payload.farm_id ?? payload["ferme_id"] ?? null;
+
+  if (isFR) {
+    out.nom = name ?? null;
+    out.taper = type ?? null;
+    out.THC = thc ?? null;
+    out.description = description ?? null;
+    out.image = img ?? null;
+    out.conseil = advice ?? null;
+    out.micron = micron ?? null;
+    out["terpènes"] = terpenes ?? [];
+    out["arôme"] = aroma ?? [];
+    out.effets = effects ?? [];
+    out.saison = season;
+    out.type_de_mauvaise_herbe = weed_kind;
+    out["sous-catégorie_id"] = subcategory_id;
+    out["ferme_id"] = farm_id;
+    // Rare/Partner: gérés par endpoints admin
+  } else {
+    out.name = name ?? null;
+    out.type = type ?? null;
+    out.thc = thc ?? null;
+    out.description = description ?? null;
+    out.img = img ?? null;
+    out.advice = advice ?? null;
+    out.micron = micron ?? null;
+    out.terpenes = terpenes ?? [];
+    out.aroma = aroma ?? [];
+    out.effects = effects ?? [];
+    out.season = season;
+    out.weed_kind = weed_kind;
+    out.subcategory_id = subcategory_id;
+    out.farm_id = farm_id;
+  }
+  return out;
+}
+
+function denormalizeFarmPayload(payload, tableName) {
+  const isFR = tableName === "fermes";
+  const out = {};
+  // on suppose mêmes colonnes (name/country/instagram/website/is_active)
+  // si jamais tu as des noms FR, on garde la compat en double
+  const name = payload.name ?? payload.nom ?? null;
+  if (isFR) {
+    out.name = name;
+    out.country = payload.country ?? payload.pays ?? null;
+    out.instagram = payload.instagram ?? null;
+    out.website = payload.website ?? payload.site ?? null;
+    out.is_active = payload.is_active ?? true;
+  } else {
+    out.name = name;
+    out.country = payload.country ?? null;
+    out.instagram = payload.instagram ?? null;
+    out.website = payload.website ?? null;
+    out.is_active = payload.is_active ?? true;
+  }
+  return out;
+}
+
+// =========================
+// DB: reads (subcategories, farms)
+// =========================
 async function dbListSubcategories() {
   assertSupabase();
-  const { data, error } = await sb.from("subcategories").select("*").order("type", { ascending: true }).order("sort", { ascending: true });
-  if (error) throw error;
-  return data || [];
+  return runWithTable(TABLES.subcategories, async (t) => {
+    const { data, error } = await sb.from(t).select("*").eq("is_active", true).order("type", { ascending: true }).order("sort", { ascending: true });
+    if (error) throw error;
+    return data || [];
+  });
 }
 
 async function dbListFarms() {
   assertSupabase();
-  const { data, error } = await sb.from("farms").select("*").eq("is_active", true).order("name", { ascending: true });
-  if (error) throw error;
-  return data || [];
+  return runWithTable(TABLES.farms, async (t) => {
+    const { data, error } = await sb.from(t).select("*").eq("is_active", true).order("name", { ascending: true });
+    if (error) throw error;
+    return data || [];
+  });
 }
 
 async function dbInsertFarm(payload) {
   assertSupabase();
-  const { data, error } = await sb.from("farms").insert(payload).select("*").single();
-  if (error) throw error;
-  return data;
+  return runWithTable(TABLES.farms, async (t) => {
+    const insertPayload = denormalizeFarmPayload(payload, t);
+    const { data, error } = await sb.from(t).insert(insertPayload).select("*").single();
+    if (error) throw error;
+    return data;
+  });
 }
 
 async function getSubcategoriesSafe() {
@@ -141,7 +329,6 @@ async function getSubcategoriesSafe() {
     _cache.subcategories = { ts: now, data: rows };
     return rows;
   } catch (e) {
-    // fallback si table pas prête
     _cache.subcategories = { ts: now, data: [] };
     return [];
   }
@@ -199,40 +386,53 @@ const typeLabel = (t) => ({ hash: "Hash", weed: "Weed", extraction: "Extraction"
 const weedKindLabel = (k) => ({ indica: "Indica", sativa: "Sativa", hybrid: "Hybrid" }[k] || k);
 
 // =========================
-// DB HELPERS
+// DB: cards CRUD (normalisé)
 // =========================
 async function dbListCards() {
   assertSupabase();
-  const { data, error } = await sb.from("cards").select("*").order("id", { ascending: true });
-  if (error) throw error;
-  return data || [];
+  return runWithTable(TABLES.cards, async (t) => {
+    const { data, error } = await sb.from(t).select("*").order("id", { ascending: true });
+    if (error) throw error;
+    return (data || []).map(normalizeCardRow).filter(Boolean);
+  });
 }
 
 async function dbGetCard(id) {
   assertSupabase();
-  const { data, error } = await sb.from("cards").select("*").eq("id", id).maybeSingle();
-  if (error) throw error;
-  return data || null;
+  return runWithTable(TABLES.cards, async (t) => {
+    const { data, error } = await sb.from(t).select("*").eq("id", id).maybeSingle();
+    if (error) throw error;
+    return normalizeCardRow(data);
+  });
 }
 
 async function dbInsertCard(payload) {
   assertSupabase();
-  const { data, error } = await sb.from("cards").insert(payload).select("*").single();
-  if (error) throw error;
-  return data;
+  return runWithTable(TABLES.cards, async (t) => {
+    const insertPayload = denormalizeCardPayload(payload, t);
+    const { data, error } = await sb.from(t).insert(insertPayload).select("*").single();
+    if (error) throw error;
+    return normalizeCardRow(data);
+  });
 }
 
 async function dbUpdateCard(id, patch) {
   assertSupabase();
-  const { data, error } = await sb.from("cards").update(patch).eq("id", id).select("*").single();
-  if (error) throw error;
-  return data;
+  return runWithTable(TABLES.cards, async (t) => {
+    const updatePayload = denormalizeCardPayload(patch, t);
+    const { data, error } = await sb.from(t).update(updatePayload).eq("id", id).select("*").single();
+    if (error) throw error;
+    return normalizeCardRow(data);
+  });
 }
 
 async function dbDeleteCard(id) {
   assertSupabase();
-  const { error } = await sb.from("cards").delete().eq("id", id);
-  if (error) throw error;
+  return runWithTable(TABLES.cards, async (t) => {
+    const { error } = await sb.from(t).delete().eq("id", id);
+    if (error) throw error;
+    return true;
+  });
 }
 
 // =========================
@@ -240,94 +440,98 @@ async function dbDeleteCard(id) {
 // =========================
 async function dbGetFeatured() {
   assertSupabase();
-  const { data, error } = await sb
-    .from("cards")
-    .select("*")
-    .eq("is_featured", true)
-    .order("id", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return data || null;
+  return runWithTable(TABLES.cards, async (t) => {
+    const isFR = t === "cartes";
+    const col = isFR ? "est_mis_en_avant" : "is_featured";
+    const { data, error } = await sb.from(t).select("*").eq(col, true).order("id", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw error;
+    return normalizeCardRow(data);
+  });
 }
 
 async function dbSetFeatured(id, title) {
   assertSupabase();
+  return runWithTable(TABLES.cards, async (t) => {
+    const isFR = t === "cartes";
+    const flag = isFR ? "est_mis_en_avant" : "is_featured";
+    const titleCol = isFR ? "titre_vedette" : "featured_title";
 
-  const { error: e1 } = await sb
-    .from("cards")
-    .update({ is_featured: false, featured_title: null })
-    .eq("is_featured", true);
-  if (e1) throw e1;
+    const { error: e1 } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
+    if (e1) throw e1;
 
-  const patch = { is_featured: true, featured_title: title || "✨ Shiny du moment" };
-  const { data, error: e2 } = await sb.from("cards").update(patch).eq("id", id).select("*").single();
-  if (e2) throw e2;
+    const patch = { [flag]: true, [titleCol]: title || "✨ Rare du moment" };
+    const { data, error: e2 } = await sb.from(t).update(patch).eq("id", id).select("*").single();
+    if (e2) throw e2;
 
-  return data;
+    return normalizeCardRow(data);
+  });
 }
 
 async function dbUnsetFeatured() {
   assertSupabase();
-  const { error } = await sb
-    .from("cards")
-    .update({ is_featured: false, featured_title: null })
-    .eq("is_featured", true);
-  if (error) throw error;
+  return runWithTable(TABLES.cards, async (t) => {
+    const isFR = t === "cartes";
+    const flag = isFR ? "est_mis_en_avant" : "is_featured";
+    const titleCol = isFR ? "titre_vedette" : "featured_title";
+    const { error } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
+    if (error) throw error;
+    return true;
+  });
 }
-
 
 // =========================
 // PARTNER (Partenaire du moment) — indépendant du Rare
 // =========================
 async function dbGetPartner() {
   assertSupabase();
-  const { data, error } = await sb
-    .from("cards")
-    .select("*")
-    .eq("is_partner", true)
-    .order("id", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return data || null;
+  return runWithTable(TABLES.cards, async (t) => {
+    const isFR = t === "cartes";
+    const col = isFR ? "est_partenaire" : "is_partner";
+    const { data, error } = await sb.from(t).select("*").eq(col, true).order("id", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw error;
+    return normalizeCardRow(data);
+  });
 }
 
 async function dbSetPartner(id, title) {
   assertSupabase();
+  return runWithTable(TABLES.cards, async (t) => {
+    const isFR = t === "cartes";
+    const flag = isFR ? "est_partenaire" : "is_partner";
+    const titleCol = isFR ? "titre_partenaire" : "partner_title";
 
-  const { error: e1 } = await sb
-    .from("cards")
-    .update({ is_partner: false, partner_title: null })
-    .eq("is_partner", true);
-  if (e1) throw e1;
+    const { error: e1 } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
+    if (e1) throw e1;
 
-  const patch = { is_partner: true, partner_title: title || "🤝 Partenaire du moment" };
-  const { data, error: e2 } = await sb.from("cards").update(patch).eq("id", id).select("*").single();
-  if (e2) throw e2;
+    const patch = { [flag]: true, [titleCol]: title || "🤝 Partenaire du moment" };
+    const { data, error: e2 } = await sb.from(t).update(patch).eq("id", id).select("*").single();
+    if (e2) throw e2;
 
-  return data;
+    return normalizeCardRow(data);
+  });
 }
 
 async function dbUnsetPartner() {
   assertSupabase();
-  const { error } = await sb
-    .from("cards")
-    .update({ is_partner: false, partner_title: null })
-    .eq("is_partner", true);
-  if (error) throw error;
+  return runWithTable(TABLES.cards, async (t) => {
+    const isFR = t === "cartes";
+    const flag = isFR ? "est_partenaire" : "is_partner";
+    const titleCol = isFR ? "titre_partenaire" : "partner_title";
+    const { error } = await sb.from(t).update({ [flag]: false, [titleCol]: null }).eq(flag, true);
+    if (error) throw error;
+    return true;
+  });
 }
 
 // =========================
 // API: cards + featured + partner + farms
 // =========================
-
 function enrichCardsWithLabels(cards, subcategories, farms) {
   const subMap = new Map((subcategories || []).map((s) => [String(s.id), s]));
   const farmMap = new Map((farms || []).map((f) => [String(f.id), f]));
 
   return (cards || []).map((c) => {
-    const scId = c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null;
+    const scId = c.subcategory_id ?? null;
     const sc = scId != null ? subMap.get(String(scId)) : null;
 
     const farmId = c.farm_id ?? null;
@@ -335,12 +539,8 @@ function enrichCardsWithLabels(cards, subcategories, farms) {
 
     return {
       ...c,
-      desc: c.description ?? "—",
-      // mapping propre
-      subcategory_id: scId,
-      subcategory_label: sc?.label || null,
+      subcategory: sc?.label || null,
       subcategory_type: sc?.type || null,
-      farm_id: farmId,
       farm: farm
         ? { id: farm.id, name: farm.name, country: farm.country, instagram: farm.instagram, website: farm.website }
         : null,
@@ -386,8 +586,12 @@ app.get("/api/farm/:farm_id/cards", async (req, res) => {
     if (!farm_id) return res.status(400).json({ error: "invalid_farm_id" });
 
     assertSupabase();
-    const { data: cards, error } = await sb.from("cards").select("*").eq("farm_id", farm_id).order("id", { ascending: false });
-    if (error) throw error;
+    const cards = await runWithTable(TABLES.cards, async (t) => {
+      const col = t === "cartes" ? "ferme_id" : "farm_id";
+      const { data, error } = await sb.from(t).select("*").eq(col, farm_id).order("id", { ascending: false });
+      if (error) throw error;
+      return (data || []).map(normalizeCardRow).filter(Boolean);
+    });
 
     const [subs, farms] = await Promise.all([getSubcategoriesSafe(), getFarmsSafe()]);
     res.json(enrichCardsWithLabels(cards || [], subs, farms));
@@ -399,28 +603,34 @@ app.get("/api/farm/:farm_id/cards", async (req, res) => {
 // =========================
 // Favorites (Mon Dex)
 // =========================
-// =========================
 app.post("/api/favorite", async (req, res) => {
   try {
     assertSupabase();
     const { user_id, card_id } = req.body || {};
     if (!user_id || !card_id) return res.status(400).json({ error: "missing user_id/card_id" });
 
-    const { data: existing, error: e1 } = await sb
-      .from("favorites")
-      .select("id")
-      .eq("user_id", user_id)
-      .eq("card_id", card_id)
-      .maybeSingle();
-    if (e1) throw e1;
+    const favTable = TABLES.favorites;
+    const cardsTable = TABLES.cards;
+
+    const existing = await runWithTable(favTable, async (t) => {
+      const { data, error } = await sb.from(t).select("id").eq("user_id", user_id).eq("card_id", card_id).maybeSingle();
+      if (error) throw error;
+      return data;
+    });
 
     if (existing?.id) {
-      const { error: e2 } = await sb.from("favorites").delete().eq("id", existing.id);
-      if (e2) throw e2;
+      await runWithTable(favTable, async (t) => {
+        const { error } = await sb.from(t).delete().eq("id", existing.id);
+        if (error) throw error;
+        return true;
+      });
       return res.json({ favorited: false });
     } else {
-      const { error: e3 } = await sb.from("favorites").insert({ user_id, card_id });
-      if (e3) throw e3;
+      await runWithTable(favTable, async (t) => {
+        const { error } = await sb.from(t).insert({ user_id, card_id });
+        if (error) throw error;
+        return true;
+      });
       return res.json({ favorited: true });
     }
   } catch (e) {
@@ -433,18 +643,20 @@ app.get("/api/mydex/:user_id", async (req, res) => {
     assertSupabase();
     const user_id = req.params.user_id;
 
-    const { data: favs, error: e1 } = await sb.from("favorites").select("card_id").eq("user_id", user_id);
-    if (e1) throw e1;
+    const favs = await runWithTable(TABLES.favorites, async (t) => {
+      const { data, error } = await sb.from(t).select("card_id").eq("user_id", user_id);
+      if (error) throw error;
+      return data || [];
+    });
 
     const ids = (favs || []).map((f) => f.card_id);
     if (!ids.length) return res.json([]);
 
-    const { data: cards, error: e2 } = await sb
-      .from("cards")
-      .select("*")
-      .in("id", ids)
-      .order("created_at", { ascending: false });
-    if (e2) throw e2;
+    const cards = await runWithTable(TABLES.cards, async (t) => {
+      const { data, error } = await sb.from(t).select("*").in("id", ids).order("id", { ascending: false });
+      if (error) throw error;
+      return (data || []).map(normalizeCardRow).filter(Boolean);
+    });
 
     const [subs, farms] = await Promise.all([getSubcategoriesSafe(), getFarmsSafe()]);
 
@@ -497,7 +709,7 @@ function buildStartKeyboard(userId) {
 }
 
 function sendStartMenu(chatId, userId) {
-  const caption = `🧬 *PokéTerps / HarvestDex*
+  const caption = `🧬 *HarvestDex*
 
 Collectionne tes fiches, ajoute-les à *Mon Dex* et explore les catégories 🔥`;
 
@@ -1087,7 +1299,7 @@ bot.on("callback_query", async (query) => {
   if (data === "menu_info") {
     const caption =
       `ℹ️ *Informations*\n\n` +
-      `PokéTerps / HarvestDex est un projet éducatif.\n` +
+      `HarvestDex est un projet éducatif.\n` +
       `Tu peux consulter les fiches, les terpènes, les arômes et les effets.\n\n` +
       `⚠️ *Disclaimer*\n` +
       `• Aucune vente ici.\n` +
@@ -1164,26 +1376,17 @@ bot.on("callback_query", async (query) => {
 
   if (data === "menu_rare") {
     if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, "✨ Rare du moment :
-• /rare id (titre optionnel)
-• /unrare
-• /rareinfo");
+    return bot.sendMessage(chatId, `✨ Rare du moment :\n• /rare id (titre optionnel)\n• /unrare\n• /rareinfo`);
   }
 
   if (data === "menu_legendary") {
     if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, "👑 Legendary :
-• /legendary id (titre optionnel)
-• /unlegendary
-• /legendaryinfo");
+    return bot.sendMessage(chatId, `👑 Legendary :\n• /legendary id (titre optionnel)\n• /unlegendary\n• /legendaryinfo`);
   }
 
   if (data === "menu_partner") {
     if (!isAdminUser(userId)) return bot.sendMessage(chatId, "⛔ Pas autorisé.");
-    return bot.sendMessage(chatId, "🤝 Partenaire du moment :
-• /partner id (titre optionnel)
-• /unpartner
-• /partnerinfo");
+    return bot.sendMessage(chatId, `🤝 Partenaire du moment :\n• /partner id (titre optionnel)\n• /unpartner\n• /partnerinfo`);
   }
 
   if (data === "menu_stats") {

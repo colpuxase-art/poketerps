@@ -12,28 +12,12 @@
   const norm = (v) => safeStr(v).trim().toLowerCase();
 
   const typeLabel = (t) =>
-    ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF", farm: "Farm" }[t] || t);
+    ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF" }[t] || t);
 
   const weedKindLabel = (k) =>
     ({ indica: "Indica", sativa: "Sativa", hybrid: "Hybrid" }[k] || k);
 
   const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
-
-
-const badge = (label, kind) => `<span class="hx-badge hx-badge--${kind}">${safeStr(label)}</span>`;
-
-function cardBadgesHtml(c) {
-  const out = [];
-  const t = norm(c.type);
-
-  out.push(badge(typeLabel(t), "type"));
-  if (c.subcategory_label) out.push(badge(c.subcategory_label, "sub"));
-  if (t !== "weed" && c.micron) out.push(badge(c.micron, "micron"));
-  if (t === "weed" && c.weed_kind) out.push(badge(weedKindLabel(norm(c.weed_kind)), "weedkind"));
-  if (c.farm?.name) out.push(badge(c.farm.name, "farm"));
-  return out.join("");
-}
-
 
   function cardDesc(c) {
     return c.desc ?? c.description ?? c.profile ?? "—";
@@ -105,23 +89,6 @@ function cardBadgesHtml(c) {
   const featuredCount = $("featuredCount");
   const sparklesWrap = $("sparkles");
 
-  // Partner box
-  const partnerBox = $("partnerBox");
-  const partnerImg = $("partnerImg");
-  const partnerTitle = $("partnerTitle");
-  const partnerName = $("partnerName");
-  const partnerMeta = $("partnerMeta");
-  const partnerLine = $("partnerLine");
-  const partnerViewBtn = $("partnerViewBtn");
-
-  // badges in details
-  const pokeBadges = $("pokeBadges");
-
-  // MyDex filters (optionnels)
-  const myDexTypeFilter = $("myDexTypeFilter");
-  const myDexSubFilter = $("myDexSubFilter");
-  const myDexFarmFilter = $("myDexFarmFilter");
-
   // MyDex/Profile panels
   const myDexList = $("myDexList");
   const myDexEmpty = $("myDexEmpty");
@@ -137,14 +104,7 @@ function cardBadgesHtml(c) {
   /* ================= STATE ================= */
   let pokedex = [];
   let featured = null;
-  let partner = null;
   let subcategories = [];
-  let farms = [];
-
-  let myDexCards = [];
-  let myDexType = "all";
-  let myDexSub = "all";
-  let myDexFarm = "all";
 
   let activeType = "all";
   let activeSub = "all"; // all | indica/sativa/hybrid | subcategory id
@@ -234,11 +194,15 @@ function cardBadgesHtml(c) {
         is_featured: Boolean(c.is_featured),
         featured_title: c.featured_title || null,
         subcategory_id: c.subcategory_id ?? null,
-        subcategory_label: c.subcategory_label ?? null,
-        subcategory_type: c.subcategory_type ?? null,
-        subcategory: (c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null),
+        subcategory_id: c.subcategory_id ?? null,
+        subcategory: c.subcategory || c.sub_category || null,
         farm_id: c.farm_id ?? null,
-        farm: c.farm ?? null, // ✅ compat
+        farm: c.farm || null, // ✅ compat
+        farm_id: c.farm_id ?? null,
+        farm: c.farm || null,
+        rarity: c.rarity || null,
+        is_partner: Boolean(c.is_partner),
+        partner_title: c.partner_title || null,
       }));
 
       pokedex = mapped.length ? mapped : fallbackPokedex;
@@ -276,13 +240,11 @@ function cardBadgesHtml(c) {
         aroma: Array.isArray(c.aroma) ? c.aroma : [],
         effects: Array.isArray(c.effects) ? c.effects : [],
         advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
-        featured_title: c.featured_title || "✨ Shiny du moment",
+        featured_title: c.featured_title || "✨ Rare du moment",
         subcategory_id: c.subcategory_id ?? null,
-        subcategory_label: c.subcategory_label ?? null,
-        subcategory_type: c.subcategory_type ?? null,
-        subcategory: (c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null),
+        subcategory: c.subcategory || c.sub_category || null,
         farm_id: c.farm_id ?? null,
-        farm: c.farm ?? null,
+        farm: c.farm || null,
       };
 
       renderFeatured();
@@ -292,6 +254,94 @@ function cardBadgesHtml(c) {
     }
   }
 
+
+async function loadPartner() {
+  try {
+    const res = await fetch("/api/partner", { cache: "no-store" });
+    if (!res.ok) {
+      if (partnerBox) partnerBox.style.display = "none";
+      return;
+    }
+    const c = await res.json();
+    if (!c) {
+      if (partnerBox) partnerBox.style.display = "none";
+      return;
+    }
+
+    const partner = {
+      id: Number(c.id) || c.id,
+      name: c.name || "Sans nom",
+      type: c.type || "hash",
+      micron: c.micron ?? null,
+      weed_kind: c.weed_kind ?? null,
+      thc: c.thc || "—",
+      desc: cardDesc(c),
+      img: c.img || "https://i.imgur.com/0HqWQvH.png",
+      terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
+      aroma: Array.isArray(c.aroma) ? c.aroma : [],
+      effects: Array.isArray(c.effects) ? c.effects : [],
+      advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
+      partner_title: c.partner_title || "🤝 Partenaire du moment",
+      subcategory_id: c.subcategory_id ?? null,
+      subcategory: c.subcategory || null,
+      farm: c.farm || null,
+    };
+
+    // render
+    if (partnerBox) partnerBox.style.display = "block";
+    if (partnerImg) partnerImg.src = partner.img;
+    if (partnerTitle) partnerTitle.textContent = partner.partner_title;
+    if (partnerName) partnerName.textContent = partner.name;
+    if (partnerMeta) {
+      const parts = [typeLabel(partner.type)];
+      if (norm(partner.type) === "weed" && partner.weed_kind) parts.push(weedKindLabel(norm(partner.weed_kind)));
+      if (norm(partner.type) !== "weed" && partner.subcategory) parts.push(safeStr(partner.subcategory));
+      if (partner.micron) parts.push(safeStr(partner.micron));
+      if (partner.farm?.name) parts.push(`🌾 ${safeStr(partner.farm.name)}`);
+      partnerMeta.textContent = parts.join(" • ");
+    }
+    if (partnerLine) partnerLine.textContent = `🧬 ${partner.desc || "—"}`;
+    partnerViewBtn?.addEventListener("click", () => {
+      selectCard(partner, true);
+      toast("🤝 Partenaire affiché !");
+      haptic("medium");
+    });
+  } catch {
+    if (partnerBox) partnerBox.style.display = "none";
+  }
+}
+
+async function loadFarms() {
+  try {
+    const res = await fetch("/api/farms", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    farms = Array.isArray(data) ? data : [];
+  } catch (e) {
+    farms = [];
+  }
+
+  if (farmSelect) {
+    farmSelect.innerHTML = "";
+    const optAll = document.createElement("option");
+    optAll.value = "all";
+    optAll.textContent = "🌾 Toutes les fermes";
+    farmSelect.appendChild(optAll);
+
+    farms.forEach((f) => {
+      const o = document.createElement("option");
+      o.value = String(f.id);
+      o.textContent = f.name ? `🌾 ${f.name}` : `Farm #${f.id}`;
+      farmSelect.appendChild(o);
+    });
+
+    farmSelect.value = String(activeFarm);
+    farmSelect.addEventListener("change", () => {
+      activeFarm = farmSelect.value || "all";
+      renderList();
+    });
+  }
+}
   async function loadSubcategories() {
     try {
       const res = await fetch("/api/subcategories", { cache: "no-store" });
@@ -356,77 +406,6 @@ function cardBadgesHtml(c) {
     });
   }
 
-
-async function loadFarms() {
-  try {
-    const res = await fetch("/api/farms", { cache: "no-store" });
-    const data = await res.json();
-    farms = Array.isArray(data) ? data : [];
-  } catch (e) {
-    farms = [];
-  }
-}
-
-async function loadPartner() {
-  try {
-    const res = await fetch("/api/partner", { cache: "no-store" });
-    if (!res.ok) {
-      partner = null;
-      if (partnerBox) partnerBox.style.display = "none";
-      return;
-    }
-    const c = await res.json();
-    if (!c) {
-      partner = null;
-      if (partnerBox) partnerBox.style.display = "none";
-      return;
-    }
-
-    partner = {
-      id: Number(c.id) || c.id,
-      name: c.name || "Sans nom",
-      type: c.type || "hash",
-      micron: c.micron ?? null,
-      weed_kind: c.weed_kind ?? null,
-      thc: c.thc || "—",
-      desc: cardDesc(c),
-      img: c.img || "https://i.imgur.com/0HqWQvH.png",
-      terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
-      aroma: Array.isArray(c.aroma) ? c.aroma : [],
-      effects: Array.isArray(c.effects) ? c.effects : [],
-      advice: c.advice || "",
-      subcategory_id: c.subcategory_id ?? null,
-      subcategory_label: c.subcategory_label ?? null,
-      subcategory_type: c.subcategory_type ?? null,
-      subcategory: (c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null),
-      farm_id: c.farm_id ?? null,
-      farm: c.farm ?? null,
-      partner_title: c.partner_title || "🤝 Partenaire du moment",
-    };
-
-    renderPartner();
-  } catch {
-    partner = null;
-    if (partnerBox) partnerBox.style.display = "none";
-  }
-}
-
-function renderPartner() {
-  if (!partnerBox || !partner) return;
-  partnerBox.style.display = "block";
-  if (partnerImg) partnerImg.src = partner.img;
-  if (partnerTitle) partnerTitle.textContent = partner.partner_title || "🤝 Partenaire du moment";
-  if (partnerName) partnerName.textContent = partner.name;
-  if (partnerMeta) partnerMeta.innerHTML = `#${partner.id} <span class="ms-1">${cardBadgesHtml(partner)}</span>`;
-  if (partnerLine) partnerLine.textContent = `🧬 ${cardDesc(partner)}`;
-
-  partnerViewBtn?.addEventListener("click", () => {
-    selectCard(partner, true);
-    toast("🤝 Partenaire affiché !");
-    haptic("medium");
-  });
-}
-
   function extraText(card) {
     const t = norm(card.type);
     if (t === "weed") return card.weed_kind ? ` • ${weedKindLabel(norm(card.weed_kind))}` : "";
@@ -441,7 +420,7 @@ function renderPartner() {
     if (featuredImg) featuredImg.src = featured.img;
     if (featuredTitle) featuredTitle.textContent = featured.featured_title || "✨ Shiny du moment";
     if (featuredName) featuredName.textContent = featured.name;
-    if (featuredMeta) featuredMeta.innerHTML = `#${featured.id} <span class="ms-1">${cardBadgesHtml(featured)}</span>`;
+    if (featuredMeta) featuredMeta.textContent = `#${featured.id} • ${typeLabel(featured.type)}${extraText(featured)}`;
     if (featuredLine) featuredLine.textContent = `🧬 ${cardDesc(featured)}`;
 
     try {
@@ -473,131 +452,95 @@ function renderPartner() {
     return btn;
   }
 
-  
-function renderSubChips() {
-  if (!subChips) return;
-  subChips.innerHTML = "";
+  function renderSubChips() {
+    if (!subChips) return;
+    subChips.innerHTML = "";
 
-  if (activeType === "all") {
-    activeSub = "all";
-    subChips.style.display = "none";
-    return;
-  }
-
-  subChips.style.display = "flex";
-
-  let options = [{ label: "Tous", value: "all" }];
-
-  if (activeType === "farm") {
-    const fs = (farms || []).map((f) => ({ label: f.name, value: "farm:" + String(f.id) }));
-    options = options.concat(fs);
-    if (activeSub !== "all" && !fs.some((x) => String(x.value) === String(activeSub))) activeSub = "all";
-  } else if (activeType === "weed") {
-    options = options.concat([
-      { label: "Indica", value: "wk:indica" },
-      { label: "Sativa", value: "wk:sativa" },
-      { label: "Hybrid", value: "wk:hybrid" },
-    ]);
-
-    const subs = (subcategories || [])
-      .filter((s) => s.type === "weed")
-      .sort((a, b) => (a.sort || 0) - (b.sort || 0))
-      .map((s) => ({ label: s.label, value: "sc:" + String(s.id) }));
-
-    options = options.concat(subs);
-
-    if (
-      activeSub !== "all" &&
-      !["wk:indica", "wk:sativa", "wk:hybrid"].includes(activeSub) &&
-      !subs.some((x) => String(x.value) === String(activeSub))
-    ) activeSub = "all";
-  } else {
-    const subs = (subcategories || [])
-      .filter((s) => s.type === activeType)
-      .sort((a, b) => (a.sort || 0) - (b.sort || 0))
-      .map((s) => ({ label: s.label, value: "sc:" + String(s.id) }));
-
-    options = options.concat(subs);
-
-    if (activeSub !== "all" && !subs.some((s) => String(s.value) === String(activeSub))) activeSub = "all";
-  }
-
-  options.forEach((opt) => {
-    const btn = chipBtn(opt.label, opt.value, String(activeSub) === String(opt.value));
-    btn.addEventListener("click", () => {
-      activeSub = String(opt.value);
-      renderSubChips();
-      renderList();
-      haptic("light");
-    });
-    subChips.appendChild(btn);
-  });
-}
-
-/* ================= FILTER + SORT ================= */
-
-  
-function matchesFilters(card) {
-  const q = norm(searchInput?.value || "");
-  const t = norm(card.type);
-
-  // type filter
-  if (activeType !== "all" && activeType !== "farm" && t !== activeType) return false;
-
-  // farm view: filtre par farm_id (toutes catégories)
-  if (activeType === "farm") {
-    if (activeSub !== "all") {
-      const fid = String(activeSub).startsWith("farm:") ? String(activeSub).slice(5) : String(activeSub);
-      if (String(card.farm_id || "") !== fid) return false;
+    if (activeType === "all") {
+      activeSub = "all";
+      subChips.style.display = "none";
+      return;
     }
-  } else {
-    // sous-catégories / filtres :
-    // - weed : weed_kind (wk:*) OU subcategory_id (sc:*)
-    // - autres : subcategory_id (sc:*)
-    if (activeSub !== "all") {
-      const v = String(activeSub);
 
-      if (activeType === "weed") {
-        if (v.startsWith("wk:")) {
-          const wk = v.slice(3);
-          if (norm(card.weed_kind) !== wk) return false;
-        } else if (v.startsWith("sc:")) {
-          const scId = v.slice(3);
-          if (String(card.subcategory_id || "") !== scId) return false;
-        }
-      } else {
-        if (v.startsWith("sc:")) {
-          const scId = v.slice(3);
-          if (String(card.subcategory_id || "") !== scId) return false;
+    subChips.style.display = "flex";
+
+    let options = [{ label: "Tous", value: "all" }];
+
+    if (activeType === "weed") {
+      options = options.concat([
+        { label: "Indica", value: "indica" },
+        { label: "Sativa", value: "sativa" },
+        { label: "Hybrid", value: "hybrid" },
+      ]);
+      if (activeSub !== "all" && !["indica","sativa","hybrid"].includes(activeSub)) activeSub = "all";
+    } else {
+      const subs = (subcategories || [])
+        .filter((s) => s.type === activeType)
+        .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+        .map((s) => ({ label: s.label, value: s.id }));
+
+      options = options.concat(subs);
+
+      if (activeSub !== "all" && !subs.some((s) => s.value === activeSub)) activeSub = "all";
+    }
+
+    options.forEach((opt) => {
+      const btn = chipBtn(opt.label, opt.value, activeSub === opt.value);
+      btn.addEventListener("click", () => {
+        activeSub = opt.value;
+        renderSubChips();
+        renderList();
+        haptic("light");
+      });
+      subChips.appendChild(btn);
+    });
+  }
+
+  /* ================= FILTER + SORT ================= */
+  function matchesFilters(card) {
+    const q = norm(searchInput?.value || "");
+    const t = norm(card.type);
+
+    if (activeType !== "all" && t !== activeType) return false;
+
+    // ✅ sous-catégories :
+    // - weed : weed_kind
+    // - autres : card.subcategory (champ conseillé)
+    if (activeType === "weed") {
+      if (activeSub !== "all") {
+        if (norm(card.weed_kind) !== activeSub) return false;
+      }
+    } else {
+      if (activeSub !== "all") {
+        const sc = norm(card.subcategory);
+        // si pas de subcategory en DB, on ne casse pas le Dex :
+        if (sc && sc !== activeSub) return false;
+        if (!sc) {
+          // si aucune donnée, on laisse passer (soft filter)
         }
       }
     }
+
+    if (showFavOnly) {
+      if (!isFavorited(card.id)) return false;
+    }
+
+    if (!q) return true;
+
+    const bag = [
+      card.name,
+      cardDesc(card),
+      card.thc,
+      ...(card.terpenes || []),
+      ...(card.aroma || []),
+      ...(card.effects || []),
+      card.advice,
+    ].map(norm).join(" ");
+
+    return bag.includes(q);
   }
 
-  if (showFavOnly) {
-    if (!isFavorited(card.id)) return false;
-  }
-
-  if (!q) return true;
-
-  const bag = [
-    card.name,
-    cardDesc(card),
-    card.thc,
-    ...(card.terpenes || []),
-    ...(card.aroma || []),
-    ...(card.effects || []),
-    card.advice,
-    card.subcategory_label,
-    card.farm?.name,
-  ]
-    .map(norm)
-    .join(" ");
-
-  return bag.includes(q);
-}
-
-function sortCards(arr) {
+  function sortCards(arr) {
     const copy = [...arr];
     if (sortMode === "az") {
       copy.sort((a, b) => safeStr(a.name).localeCompare(safeStr(b.name)));
@@ -757,11 +700,9 @@ function sortCards(arr) {
           effects: Array.isArray(c.effects) ? c.effects : [],
           advice: c.advice || "",
           subcategory_id: c.subcategory_id ?? null,
-        subcategory_label: c.subcategory_label ?? null,
-        subcategory_type: c.subcategory_type ?? null,
-        subcategory: (c.subcategory_id ?? c.subcategory ?? c.sub_category ?? null),
+        subcategory: c.subcategory || c.sub_category || null,
         farm_id: c.farm_id ?? null,
-        farm: c.farm ?? null,
+        farm: c.farm || null,
         }));
 
         // sync local favs from server set
@@ -924,8 +865,9 @@ function sortCards(arr) {
     applyThemeFromStorage();
     setLoading(true);
 
-    await Promise.all([loadSubcategories(), loadFarms(), loadCards()]);
-    await Promise.all([loadFeatured(), loadPartner()]);
+    await Promise.all([loadSubcategories(), loadCards()]);
+    await loadFeatured();
+    await loadPartner();
 
     renderSubChips();
     renderList();

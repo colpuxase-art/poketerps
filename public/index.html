@@ -248,6 +248,29 @@
                     </div>
                   </div>
 
+
+<!-- PARTNER BOX -->
+<div id="partnerBox" class="mb-3" style="display:none;">
+  <div class="featured-card partner-card">
+    <div class="d-flex gap-3 align-items-center">
+      <img id="partnerImg" src="https://i.imgur.com/0HqWQvH.png" class="featured-img" alt="partner">
+      <div class="flex-grow-1">
+        <div id="partnerTitle" class="featured-title">🤝 Partenaire du moment</div>
+        <div class="d-flex align-items-center justify-content-between gap-2">
+          <div>
+            <div id="partnerName" class="featured-name">—</div>
+            <div id="partnerMeta" class="featured-mini">—</div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button id="partnerViewBtn" class="btn btn-sm btn-outline-light featured-btn" type="button">Voir</button>
+          </div>
+        </div>
+        <div id="partnerLine" class="mt-2 featured-mini">🧬 —</div>
+      </div>
+    </div>
+  </div>
+</div>
+
                   <!-- CONTROLS -->
                   <div class="control-pill mb-3">
                     <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
@@ -261,6 +284,9 @@
                           <option value="new">🆕 Nouveau</option>
                           <option value="az">A–Z</option>
                           <option value="thc">🔥 THC (haut)</option>
+                        </select>
+                        <select id="farmSelect" class="form-select form-select-sm bg-dark text-white border-secondary" style="width:auto;">
+                          <option value="all">🌾 Toutes les fermes</option>
                         </select>
                         <button id="favToggle" class="btn btn-sm pill-btn" type="button">❤️ Favoris</button>
                       </div>
@@ -285,26 +311,9 @@
                     <button class="btn btn-sm btn-outline-success chip" data-type="weed" type="button">Weed</button>
                     <button class="btn btn-sm btn-outline-warning chip" data-type="extraction" type="button">Extraction</button>
                     <button class="btn btn-sm btn-outline-info chip" data-type="wpff" type="button">WPFF</button>
-                    <button class="btn btn-sm btn-outline-success chip" data-type="farm" type="button">Farms</button>
                   </div>
 
-                  
-                  <!-- Partenaire du moment -->
-                  <div id="partnerBox" class="featured-wrap p-3 mb-3" style="display:none;">
-                    <div class="d-flex align-items-start gap-3">
-                      <img id="partnerImg" src="" alt="" width="68" height="68"
-                        style="border-radius:14px; object-fit:cover; border:1px solid rgba(255,255,255,.10);">
-                      <div class="flex-grow-1">
-                        <div id="partnerTitle" class="text-success fw-bold">🤝 Partenaire du moment</div>
-                        <div id="partnerName" class="fs-5 fw-bold mt-1"></div>
-                        <div id="partnerMeta" class="text-secondary small mt-1"></div>
-                        <div id="partnerLine" class="small mt-2"></div>
-                        <button id="partnerViewBtn" class="btn btn-sm btn-outline-success mt-2" type="button">Voir la fiche</button>
-                      </div>
-                    </div>
-                  </div>
-
-<!-- Sub-catégories -->
+                  <!-- Sub-catégories -->
                   <div id="subChips"></div>
 
                   <!-- Skeleton list -->
@@ -377,11 +386,7 @@
                             <span class="text-secondary">Catégorie</span>
                             <span id="pokeType" class="fw-semibold">—</span>
                           </div>
-                          <div class="mt-2">
-                            <div class="text-secondary small mb-1">Badges</div>
-                            <div id="pokeBadges" class="hx-badges"></div>
-                          </div>
-                          <div class="d-flex justify-content-between mt-2>
+                          <div class="d-flex justify-content-between mt-2">
                             <span class="text-secondary">THC</span>
                             <span id="pokeThc" class="fw-semibold">—</span>
                           </div>
@@ -412,20 +417,7 @@ Ici tu verras la fiche complète (terpènes, arômes, effets, conseils).
               <h2 class="h4 mb-2">⭐ Mon Dex</h2>
               <p class="text-secondary mb-3">Ici tu verras tes favoris (liés à ton Telegram ID).</p>
 
-              
-              <div class="d-flex flex-wrap gap-2 mb-3">
-                <select id="myDexTypeFilter" class="form-select form-select-sm bg-black text-white border-secondary" style="max-width: 160px;">
-                  <option value="all">Toutes catégories</option>
-                </select>
-                <select id="myDexSubFilter" class="form-select form-select-sm bg-black text-white border-secondary" style="max-width: 180px;">
-                  <option value="all">Toutes sous-catégories</option>
-                </select>
-                <select id="myDexFarmFilter" class="form-select form-select-sm bg-black text-white border-secondary" style="max-width: 180px;">
-                  <option value="all">Toutes farms</option>
-                </select>
-              </div>
-
-<div id="myDexEmpty" class="text-secondary">Aucune fiche dans ton Dex pour le moment.</div>
+              <div id="myDexEmpty" class="text-secondary">Aucune fiche dans ton Dex pour le moment.</div>
               <div id="myDexList" class="list-group list-group-flush mt-3"></div>
             </div>
           </div>
