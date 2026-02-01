@@ -11312,3 +11312,22 @@ body{padding-bottom:72px;}
   --hx-accent2:#2DD4BF; /* teal */
   --hx-danger:#ff3b3b;
 }
+
+.bottom-nav{
+  display:flex;
+  justify-content: space-between;
+  align-items:center;
+}
+
+.bn-item{
+  flex: 1 1 0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+}
+
+.bn-item *{
+  pointer-events:none; /* ✅ le clic marche partout */
+}
