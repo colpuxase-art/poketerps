@@ -84,7 +84,11 @@ function escapeMd(s) {
   return t.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
 }
 
-// ✅ safe send (si un message casse, on renvoie sans parse_mode)
+// =========================
+// Telegram safe send
+// =========================
+let bot;
+
 async function safeSendMessage(chatId, text, opts = {}) {
   try {
     return await bot.sendMessage(chatId, text, opts);
@@ -147,24 +151,39 @@ const SUBCATEGORIES_FALLBACK = [
 app.get("/api/subcategories", (req, res) => res.json(SUBCATEGORIES_FALLBACK));
 
 // =========================
-// DB HELPERS (cards)
+// DB HELPERS (cards)  ✅ JOIN farms
 // =========================
+const CARD_WITH_FARM_SELECT = `
+  *,
+  farm:farms (
+    id, name, country, instagram, website, is_active
+  )
+`;
+
 async function dbListCards() {
   assertSupabase();
-  const { data, error } = await sb.from("cards").select("*").order("id", { ascending: true });
+  const { data, error } = await sb
+    .from("cards")
+    .select(CARD_WITH_FARM_SELECT)
+    .order("id", { ascending: true });
   if (error) throw error;
   return data || [];
 }
 
 async function dbGetCard(id) {
   assertSupabase();
-  const { data, error } = await sb.from("cards").select("*").eq("id", id).maybeSingle();
+  const { data, error } = await sb
+    .from("cards")
+    .select(CARD_WITH_FARM_SELECT)
+    .eq("id", id)
+    .maybeSingle();
   if (error) throw error;
   return data || null;
 }
 
 async function dbInsertCard(payload) {
   assertSupabase();
+  // insert simple (pas besoin join)
   const { data, error } = await sb.from("cards").insert(payload).select("*").single();
   if (error) throw error;
   return data;
@@ -235,13 +254,13 @@ async function dbGetOrCreateFarmByName(name) {
 }
 
 // =========================
-// FEATURED (Rare du moment = Shiny du moment)
+// FEATURED (Rare du moment = Shiny du moment) ✅ JOIN farms
 // =========================
 async function dbGetFeatured() {
   assertSupabase();
   const { data, error } = await sb
     .from("cards")
-    .select("*")
+    .select(CARD_WITH_FARM_SELECT)
     .eq("is_featured", true)
     .order("id", { ascending: false })
     .limit(1)
@@ -303,7 +322,9 @@ app.get("/api/featured", async (req, res) => {
 app.get("/api/farms", async (req, res) => {
   try {
     const farms = await dbListFarms();
-    res.json(farms || []);
+    // optionnel: ne renvoyer que les farms actives
+    const active = (farms || []).filter((f) => f.is_active !== false);
+    res.json(active);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -345,7 +366,10 @@ app.get("/api/mydex/:user_id", async (req, res) => {
     assertSupabase();
     const user_id = req.params.user_id;
 
-    const { data: favs, error: e1 } = await sb.from("favorites").select("card_id").eq("user_id", user_id);
+    const { data: favs, error: e1 } = await sb
+      .from("favorites")
+      .select("card_id")
+      .eq("user_id", user_id);
     if (e1) throw e1;
 
     const ids = (favs || []).map((f) => f.card_id);
@@ -353,7 +377,7 @@ app.get("/api/mydex/:user_id", async (req, res) => {
 
     const { data: cards, error: e2 } = await sb
       .from("cards")
-      .select("*")
+      .select(CARD_WITH_FARM_SELECT)
       .in("id", ids)
       .order("created_at", { ascending: false });
     if (e2) throw e2;
@@ -363,6 +387,7 @@ app.get("/api/mydex/:user_id", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
 // =========================
 // STATS API (Popular / Trending / New) - STABLE
 // =========================
@@ -397,9 +422,9 @@ async function favoriteCounts({ days = null } = {}) {
   return map;
 }
 
-// helper: load cards once
+// helper: load cards once (avec farm join)
 async function loadAllCards() {
-  const cards = await dbListCards(); // already in your code
+  const cards = await dbListCards();
   return (cards || []).map((c) => ({
     ...c,
     desc: c.description ?? "—",
@@ -417,13 +442,13 @@ app.get("/api/stats/popular", async (req, res) => {
       favorite_count: counts.get(String(c.id)) || 0,
     }));
 
-    // sort by favorite_count desc, then id desc
-    enriched.sort((a, b) => (b.favorite_count - a.favorite_count) || ((Number(b.id)||0) - (Number(a.id)||0)));
+    enriched.sort(
+      (a, b) =>
+        b.favorite_count - a.favorite_count ||
+        (Number(b.id) || 0) - (Number(a.id) || 0)
+    );
 
-    // if no favorites at all -> return latest cards instead (fallback)
-    const anyFav = enriched.some((c) => c.favorite_count > 0);
-    const out = anyFav ? enriched.slice(0, limit) : enriched.slice(0, limit);
-
+    const out = enriched.slice(0, limit);
     res.json(out);
   } catch (e) {
     console.error("❌ /api/stats/popular:", e.message);
@@ -442,14 +467,25 @@ app.get("/api/stats/trending", async (req, res) => {
       favorite_count: counts7d.get(String(c.id)) || 0,
     }));
 
-    enriched.sort((a, b) => (b.favorite_count - a.favorite_count) || ((Number(b.id)||0) - (Number(a.id)||0)));
+    enriched.sort(
+      (a, b) =>
+        b.favorite_count - a.favorite_count ||
+        (Number(b.id) || 0) - (Number(a.id) || 0)
+    );
 
     // fallback si rien en 7 jours -> popular all time
     const anyTrending = enriched.some((c) => c.favorite_count > 0);
     if (!anyTrending) {
       const counts = await favoriteCounts();
-      const enr2 = cards.map((c) => ({ ...c, favorite_count: counts.get(String(c.id)) || 0 }));
-      enr2.sort((a, b) => (b.favorite_count - a.favorite_count) || ((Number(b.id)||0) - (Number(a.id)||0)));
+      const enr2 = cards.map((c) => ({
+        ...c,
+        favorite_count: counts.get(String(c.id)) || 0,
+      }));
+      enr2.sort(
+        (a, b) =>
+          b.favorite_count - a.favorite_count ||
+          (Number(b.id) || 0) - (Number(a.id) || 0)
+      );
       return res.json(enr2.slice(0, limit));
     }
 
@@ -469,15 +505,14 @@ app.get("/api/stats/new", async (req, res) => {
     if (cardsHasCreatedAt) {
       const { data, error } = await sb
         .from("cards")
-        .select("*")
+        .select(CARD_WITH_FARM_SELECT)
         .order("created_at", { ascending: false })
         .limit(limit);
       if (error) throw error;
       cards = (data || []).map((c) => ({ ...c, desc: c.description ?? "—" }));
     } else {
-      // fallback: id desc
       const all = await loadAllCards();
-      all.sort((a, b) => (Number(b.id)||0) - (Number(a.id)||0));
+      all.sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
       cards = all.slice(0, limit);
     }
 
@@ -491,8 +526,6 @@ app.get("/api/stats/new", async (req, res) => {
 // =========================
 // TELEGRAM BOT (polling/webhook)
 // =========================
-let bot;
-
 if (WEBHOOK_URL) {
   bot = new TelegramBot(TOKEN);
   const hookPath = `/bot${TOKEN}`;
@@ -585,7 +618,6 @@ bot.onText(/^\/adminhelp$/, async (msg) => {
     `✅ /rareinfo\n\n` +
     `*fields /edit:* name,type,subcategory_id,farm_id,micron,weed_kind,thc,description,img,advice,terpenes,aroma,effects`;
 
-  // ✅ safe pour pas casser markdown
   return safeSendMessage(chatId, txt, { parse_mode: "Markdown" });
 });
 
@@ -785,7 +817,7 @@ bot.onText(/^\/edit\s+(\d+)\s+(\w+)\s+([\s\S]+)$/m, async (msg, match) => {
       if (newType === "weed") {
         patch.micron = null;
         patch.weed_kind = card.weed_kind || "hybrid";
-        patch.subcategory_id = null; // ✅ weed utilise weed_kind, pas subcategory_id
+        patch.subcategory_id = null;
       } else {
         patch.weed_kind = null;
       }
@@ -1115,14 +1147,12 @@ bot.on("callback_query", async (query) => {
 
     state.data.type = t;
 
-    // WEED: weed_kind
     if (t === "weed") {
       state.step = "weed_kind";
       addWizard.set(chatId, state);
       return askWeedKind(chatId);
     }
 
-    // HASH/EXTRACTION/WPFF: ask subcategory (DB)
     try {
       const subs = await dbListSubcategoriesByType(t);
       state.step = "subcategory";
@@ -1130,7 +1160,6 @@ bot.on("callback_query", async (query) => {
       addWizard.set(chatId, state);
       return askSubcategory(chatId, t, subs);
     } catch (e) {
-      // fallback: si table subcategories pas dispo
       state.step = "micron";
       addWizard.set(chatId, state);
       return askMicron(chatId);
@@ -1195,7 +1224,6 @@ bot.on("callback_query", async (query) => {
   if (isAdminUser(userId) && data === "del_cancel") return delCancel(chatId);
 
   // (tes blocs edit_pick_/del_pick_ etc restent identiques à ton fichier actuel)
-  // 👉 Je les laisse tels quels dans ton code original (vu que chez toi ça marche nickel).
 });
 
 // =========================
@@ -1279,8 +1307,6 @@ bot.on("message", async (msg) => {
       }
     }
   }
-
-  // edit wizard : garde ton code si tu veux, ici je ne touche pas
 });
 
 // =========================
