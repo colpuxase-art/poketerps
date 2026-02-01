@@ -363,6 +363,130 @@ app.get("/api/mydex/:user_id", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+// =========================
+// STATS API (Popular / Trending / New) - STABLE
+// =========================
+
+// helper: check if a column exists (safe)
+async function hasColumn(table, column) {
+  assertSupabase();
+  const { error } = await sb.from(table).select(column, { head: true }).limit(1);
+  return !error;
+}
+
+// helper: favorites counts (optionally time window)
+async function favoriteCounts({ days = null } = {}) {
+  assertSupabase();
+
+  const useWindow = Number(days || 0) > 0;
+  const favHasCreatedAt = useWindow ? await hasColumn("favorites", "created_at") : false;
+  const sinceISO = useWindow ? new Date(Date.now() - days * 864e5).toISOString() : null;
+
+  let q = sb.from("favorites").select("card_id" + (favHasCreatedAt ? ",created_at" : ""));
+  if (favHasCreatedAt && sinceISO) q = q.gte("created_at", sinceISO);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  const map = new Map();
+  for (const r of data || []) {
+    if (r.card_id == null) continue;
+    const k = String(r.card_id);
+    map.set(k, (map.get(k) || 0) + 1);
+  }
+  return map;
+}
+
+// helper: load cards once
+async function loadAllCards() {
+  const cards = await dbListCards(); // already in your code
+  return (cards || []).map((c) => ({
+    ...c,
+    desc: c.description ?? "—",
+  }));
+}
+
+app.get("/api/stats/popular", async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(Number(req.query.limit || 8), 50));
+    const cards = await loadAllCards();
+    const counts = await favoriteCounts(); // all time
+
+    const enriched = cards.map((c) => ({
+      ...c,
+      favorite_count: counts.get(String(c.id)) || 0,
+    }));
+
+    // sort by favorite_count desc, then id desc
+    enriched.sort((a, b) => (b.favorite_count - a.favorite_count) || ((Number(b.id)||0) - (Number(a.id)||0)));
+
+    // if no favorites at all -> return latest cards instead (fallback)
+    const anyFav = enriched.some((c) => c.favorite_count > 0);
+    const out = anyFav ? enriched.slice(0, limit) : enriched.slice(0, limit);
+
+    res.json(out);
+  } catch (e) {
+    console.error("❌ /api/stats/popular:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/stats/trending", async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(Number(req.query.limit || 8), 50));
+    const cards = await loadAllCards();
+    const counts7d = await favoriteCounts({ days: 7 });
+
+    const enriched = cards.map((c) => ({
+      ...c,
+      favorite_count: counts7d.get(String(c.id)) || 0,
+    }));
+
+    enriched.sort((a, b) => (b.favorite_count - a.favorite_count) || ((Number(b.id)||0) - (Number(a.id)||0)));
+
+    // fallback si rien en 7 jours -> popular all time
+    const anyTrending = enriched.some((c) => c.favorite_count > 0);
+    if (!anyTrending) {
+      const counts = await favoriteCounts();
+      const enr2 = cards.map((c) => ({ ...c, favorite_count: counts.get(String(c.id)) || 0 }));
+      enr2.sort((a, b) => (b.favorite_count - a.favorite_count) || ((Number(b.id)||0) - (Number(a.id)||0)));
+      return res.json(enr2.slice(0, limit));
+    }
+
+    res.json(enriched.slice(0, limit));
+  } catch (e) {
+    console.error("❌ /api/stats/trending:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/stats/new", async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(Number(req.query.limit || 8), 50));
+    const cardsHasCreatedAt = await hasColumn("cards", "created_at");
+
+    let cards;
+    if (cardsHasCreatedAt) {
+      const { data, error } = await sb
+        .from("cards")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      cards = (data || []).map((c) => ({ ...c, desc: c.description ?? "—" }));
+    } else {
+      // fallback: id desc
+      const all = await loadAllCards();
+      all.sort((a, b) => (Number(b.id)||0) - (Number(a.id)||0));
+      cards = all.slice(0, limit);
+    }
+
+    res.json(cards);
+  } catch (e) {
+    console.error("❌ /api/stats/new:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // =========================
 // TELEGRAM BOT (polling/webhook)
