@@ -44,7 +44,21 @@
     if (anchor) anchor.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  function scrollToList() {
+    const el = document.getElementById("list") || document.getElementById("listSkeleton");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   /* ================= ELEMENTS ================= */
+  // Quick sections rows + buttons
+  const trendRow = $("trendRow");
+  const newRow = $("newRow");
+  const popularRow = $("popularRow");
+
+  const trendMoreBtn = $("trendMoreBtn");
+  const newMoreBtn = $("newMoreBtn");
+  const popularMoreBtn = $("popularMoreBtn");
+
   const listEl = $("list");
   const countBadge = $("countBadge");
   const favBadge = $("favBadge");
@@ -96,14 +110,6 @@
   const profileUserId = $("profileUserId");
   const profileFavCount = $("profileFavCount");
 
-  // Stats rows
-  const trendRow = $("trendRow");
-  const newRow = $("newRow");
-  const popularRow = $("popularRow");
-  const trendMoreBtn = $("trendMoreBtn");
-  const newMoreBtn = $("newMoreBtn");
-  const popularMoreBtn = $("popularMoreBtn");
-
   if (!listEl || !countBadge || !searchInput) {
     console.error("❌ IDs HTML manquants (list/countBadge/searchInput).");
     return;
@@ -117,14 +123,18 @@
   let activeFarm = "all";
 
   let activeType = "all";
-  let activeSub = "all"; // weed: indica/sativa/hybrid | others: subcategory_id
+  let activeSub = "all"; // weed: indica/sativa/hybrid | others: subcategory_id (string)
   let selected = null;
 
   let sortMode = "new"; // new | az | thc
   let showFavOnly = false;
 
-  // ✅ “Voir tout” sections -> override list by IDs
+  // “Voir tout” sections -> override list by IDs
   let listOverride = null; // Set<string> | null
+
+  // Pagination (éviter 400 fiches d’un coup)
+  const pageSize = 50;
+  let pageShown = pageSize;
 
   /* ================= FALLBACK DATA ================= */
   const fallbackPokedex = [
@@ -206,7 +216,7 @@
         is_featured: Boolean(c.is_featured),
         featured_title: c.featured_title || null,
 
-        // ✅ IMPORTANT pour filtres stricts
+        // IMPORTANT pour filtres stricts
         subcategory_id: c.subcategory_id != null ? Number(c.subcategory_id) : null,
         farm_id: c.farm_id != null ? Number(c.farm_id) : (c.farm?.id != null ? Number(c.farm.id) : null),
         created_at: c.created_at || null,
@@ -279,7 +289,7 @@
   }
 
   async function loadFarms() {
-    // ✅ optionnel: si tu as un endpoint /api/farms un jour
+    // Optionnel: si tu as /api/farms un jour
     // sinon on dérive depuis cards
     try {
       const derived = new Map();
@@ -383,6 +393,10 @@
     return btn;
   }
 
+  function resetPaging() {
+    pageShown = pageSize;
+  }
+
   function renderSubChips() {
     if (!subChips) return;
     subChips.innerHTML = "";
@@ -405,8 +419,7 @@
       ]);
       if (activeSub !== "all" && !["indica","sativa","hybrid"].includes(activeSub)) activeSub = "all";
     } else {
-      // ✅ IMPORTANT: ta DB a subcategories en BIGINT id.
-      // Donc on utilise ID numérique (ex: 5,7...)
+      // DB: subcategories en BIGINT -> on utilise ID numérique string
       const subs = (subcategories || [])
         .filter((s) => s.type === activeType)
         .sort((a, b) => (a.sort || 0) - (b.sort || 0))
@@ -421,7 +434,8 @@
       const btn = chipBtn(opt.label, opt.value, String(activeSub) === String(opt.value));
       btn.addEventListener("click", () => {
         activeSub = opt.value;
-        listOverride = null; // ✅ reset override si tu changes de sub-filter
+        listOverride = null;     // reset override si change sub-filter
+        resetPaging();
         renderSubChips();
         renderList();
         haptic("light");
@@ -440,16 +454,15 @@
 
     if (activeType !== "all" && activeType !== "farm" && t !== activeType) return false;
 
-    // ✅ Sous-catégories strictes
+    // Sous-catégories strictes
     if (activeType === "weed") {
       if (activeSub !== "all") {
         if (norm(card.weed_kind) !== String(activeSub)) return false;
       }
     } else if (activeType !== "all" && activeType !== "farm") {
       if (activeSub !== "all") {
-        // STRICT: si la fiche n'a pas subcategory_id -> elle ne doit PAS apparaître
         const scId = (card.subcategory_id != null) ? String(card.subcategory_id) : null;
-        if (!scId) return false;
+        if (!scId) return false;                 // STRICT: pas de subcategory_id -> pas dedans
         if (scId !== String(activeSub)) return false;
       }
     }
@@ -523,7 +536,9 @@
       if (farmSection) farmSection.style.display = "none";
     }
 
-    const items = sortCards(pokedex.filter(matchesFilters));
+    const filtered = sortCards(pokedex.filter(matchesFilters));
+    const items = filtered.slice(0, pageShown);
+
     listEl.innerHTML = "";
     updateBadges();
 
@@ -545,7 +560,6 @@
       const subTxt = (() => {
         const t = norm(c.type);
         if (t === "weed" && c.weed_kind) return ` • ${weedKindLabel(norm(c.weed_kind))}`;
-        // afficher label subcategory si dispo
         if (c.subcategory_id != null) {
           const found = (subcategories || []).find(x => String(x.id) === String(c.subcategory_id));
           if (found) return ` • ${found.label}`;
@@ -569,6 +583,21 @@
       btn.addEventListener("click", () => selectCard(c, true));
       listEl.appendChild(btn);
     });
+
+    // Charger plus
+    if (filtered.length > pageShown) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "btn btn-outline-light w-100 mt-2";
+      more.style.borderRadius = "14px";
+      more.textContent = `Charger plus (${pageShown}/${filtered.length})`;
+      more.addEventListener("click", () => {
+        pageShown = Math.min(filtered.length, pageShown + pageSize);
+        renderList();
+        haptic("light");
+      });
+      listEl.appendChild(more);
+    }
   }
 
   /* ================= SELECT CARD ================= */
@@ -705,7 +734,6 @@
       <div class="t2">#${c.id} • ${typeLabel(c.type)}${sc ? " • " + sc : ""}</div>
     `;
     div.addEventListener("click", () => {
-      // pick from main pokedex if exists (to keep same object shape)
       const real = pokedex.find(x => String(x.id) === String(c.id)) || c;
       selectCard(real, true);
       haptic("light");
@@ -732,7 +760,6 @@
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
       const arr = Array.isArray(data) ? data : [];
-      // normalize minimal
       const normalized = arr.map(c => ({
         id: Number(c.id) || c.id,
         name: c.name || "Sans nom",
@@ -753,17 +780,22 @@
     if (!items || !items.length) return toast("Rien à afficher");
     listOverride = new Set(items.map(x => String(x.id)));
     toast(`📌 Voir tout: ${label}`);
-    // reset filters to show them
+
     activeType = "all";
     activeSub = "all";
     activeFarm = "all";
     showFavOnly = false;
+
     favToggle?.classList?.remove("active");
-    favToggle.textContent = "❤️ Favoris";
+    if (favToggle) favToggle.textContent = "❤️ Favoris";
+
     document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
     document.querySelector('.chip[data-type="all"]')?.classList?.add("active");
+
+    resetPaging();
     renderSubChips();
     renderList();
+    scrollToList();
     haptic("medium");
   }
 
@@ -803,12 +835,15 @@
       `;
       btn.addEventListener("click", () => {
         activeFarm = String(f.id);
-        // retourne sur "Tous"
+
         listOverride = null;
-        document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
-        document.querySelector('.chip[data-type="all"]')?.classList?.add("active");
         activeType = "all";
         activeSub = "all";
+
+        document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
+        document.querySelector('.chip[data-type="all"]')?.classList?.add("active");
+
+        resetPaging();
         renderSubChips();
         renderList();
         toast(`🌾 ${safeStr(f.name)} sélectionnée`);
@@ -826,18 +861,23 @@
 
       activeType = b.dataset.type || "all";
       activeSub = "all";
-      listOverride = null; // ✅ important: on quitte “Voir tout” quand tu changes de chip
+      listOverride = null;
 
       if (farmSection) farmSection.style.display = (activeType === "farm") ? "block" : "none";
       if (activeType === "farm") renderFarmList();
 
+      resetPaging();
       renderSubChips();
       renderList();
       haptic("light");
     });
   });
 
-  searchInput?.addEventListener("input", () => renderList());
+  searchInput?.addEventListener("input", () => {
+    listOverride = null;
+    resetPaging();
+    renderList();
+  });
 
   farmSearchInput?.addEventListener("input", () => renderFarmList());
   farmClearBtn?.addEventListener("click", () => {
@@ -848,13 +888,15 @@
 
   clearBtn?.addEventListener("click", () => {
     searchInput.value = "";
-    listOverride = null; // ✅ clear “Voir tout” quand tu clear
+    listOverride = null;
+    resetPaging();
     renderList();
     haptic("light");
   });
 
   sortSelect?.addEventListener("change", () => {
     sortMode = sortSelect.value || "new";
+    resetPaging();
     renderList();
     haptic("light");
   });
@@ -864,6 +906,7 @@
     listOverride = null;
     favToggle.classList.toggle("active", showFavOnly);
     favToggle.textContent = showFavOnly ? "❤️ Favoris ON" : "❤️ Favoris";
+    resetPaging();
     renderList();
     haptic("light");
   });
@@ -937,16 +980,28 @@
     loadProfile();
     updateBadges();
 
-    // ✅ load sections
-    const [trendItems, newItems, popularItems] = await Promise.all([
+    // rows preview (8)
+    await Promise.all([
       loadStatsRow("/api/stats/trending?limit=8", trendRow),
       loadStatsRow("/api/stats/new?limit=8", newRow),
       loadStatsRow("/api/stats/popular?limit=8", popularRow),
     ]);
 
-    trendMoreBtn?.addEventListener("click", () => setOverrideFrom(trendItems, "Tendance"));
-    newMoreBtn?.addEventListener("click", () => setOverrideFrom(newItems, "Nouveautés"));
-    popularMoreBtn?.addEventListener("click", () => setOverrideFrom(popularItems, "Populaire"));
+    // Voir tout: fetch plus grand set (évite d’être limité à 8)
+    trendMoreBtn?.addEventListener("click", async () => {
+      const full = await loadStatsRow("/api/stats/trending?limit=200", trendRow);
+      setOverrideFrom(full, "Tendance");
+    });
+
+    newMoreBtn?.addEventListener("click", async () => {
+      const full = await loadStatsRow("/api/stats/new?limit=200", newRow);
+      setOverrideFrom(full, "Nouveautés");
+    });
+
+    popularMoreBtn?.addEventListener("click", async () => {
+      const full = await loadStatsRow("/api/stats/popular?limit=200", popularRow);
+      setOverrideFrom(full, "Populaire");
+    });
 
     setLoading(false);
 
