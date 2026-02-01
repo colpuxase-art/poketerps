@@ -4,7 +4,7 @@ const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 // =========================
 // Static (mini-app)
@@ -21,6 +21,14 @@ const TOKEN = process.env.BOT_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const WEBAPP_URL = process.env.WEBAPP_URL || "";
+
+// ✅ Render fournit généralement l'URL publique.
+// On privilégie WEBHOOK_URL si fourni, sinon RENDER_EXTERNAL_URL,
+// sinon on reconstruit via RENDER_EXTERNAL_HOSTNAME (si dispo).
+const RENDER_EXTERNAL_URL = (process.env.RENDER_EXTERNAL_URL || "").trim();
+const RENDER_EXTERNAL_HOSTNAME = (process.env.RENDER_EXTERNAL_HOSTNAME || "").trim();
+const RENDER_FALLBACK_URL = RENDER_EXTERNAL_HOSTNAME ? `https://${RENDER_EXTERNAL_HOSTNAME}` : "";
+const WEBHOOK_URL = (process.env.WEBHOOK_URL || RENDER_EXTERNAL_URL || RENDER_FALLBACK_URL || "").trim();
 
 const START_IMAGE_URL =
   process.env.START_IMAGE_URL || "https://i.postimg.cc/9Qp0JmJY/harvestdex-start.jpg";
@@ -48,15 +56,45 @@ function assertSupabase() {
 }
 
 // =========================
-// Telegram: POLLING ONLY (comme avant)
+// Telegram: WEBHOOK sur Render (évite les 409 pendant les déploiements)
+// - Si WEBHOOK_URL ou RENDER_EXTERNAL_URL est présent => Webhook
+// - Sinon => Polling (dev local)
 // =========================
-const bot = new TelegramBot(TOKEN, { polling: true });
-console.log("✅ Bot en mode POLLING");
+let bot;
 
-// Hard guards (Render)
-bot.on("polling_error", (err) => {
-  console.error("❌ polling_error:", err?.message || err);
-});
+if (WEBHOOK_URL) {
+  bot = new TelegramBot(TOKEN);
+  const hookPath = `/bot${TOKEN}`;
+  const fullHook = `${WEBHOOK_URL.replace(/\/$/, "")}${hookPath}`;
+
+  // route webhook (Telegram post ici)
+  app.post(hookPath, (req, res) => {
+    try {
+      bot.processUpdate(req.body);
+    } catch (e) {
+      console.error("❌ processUpdate:", e?.message || e);
+    }
+    res.sendStatus(200);
+  });
+
+  bot
+    .setWebHook(fullHook, { drop_pending_updates: true })
+    .then(() => console.log("✅ Bot en mode WEBHOOK :", fullHook))
+    .catch((e) => console.error("❌ setWebHook:", e?.message || e));
+} else {
+  bot = new TelegramBot(TOKEN, { polling: true });
+  // évite le conflit si un webhook était resté configuré
+  bot
+    .deleteWebHook({ drop_pending_updates: true })
+    .then(() => console.log("ℹ️ Webhook supprimé (mode polling)"))
+    .catch(() => {});
+  console.log("✅ Bot en mode POLLING");
+  bot.on("polling_error", (err) => {
+    console.error("❌ polling_error:", err?.message || err);
+  });
+}
+
+// Hard guards (Render + dev)
 process.on("unhandledRejection", (err) => console.error("⚠️ Rejet non géré :", err?.message || err));
 process.on("uncaughtException", (err) => console.error("⚠️ Exception non gérée :", err?.message || err));
 
@@ -114,7 +152,8 @@ const isAdminUser = (userId) => ADMIN_IDS.has(Number(userId));
 // DB: compat FR/EN (tables + colonnes)
 // =========================
 const TABLES = {
-  cards: ["cartes", "cards"],
+  // table officielle: public.cards (compat: anciens projets -> public.cartes)
+  cards: ["cards", "cartes"],
   favorites: ["favoris", "favorites"],
   farms: ["fermes", "farms"],
   subcategories: ["subcategories", "sous-catégories", "sous_categories", "sous-categories"],
@@ -123,7 +162,14 @@ const TABLES = {
 
 function isMissingRelation(err) {
   const m = String(err?.message || "").toLowerCase();
-  return m.includes("does not exist") || m.includes("relation") || m.includes("not found");
+  // Supabase renvoie parfois: "Could not find the table 'public.X' in the schema cache"
+  return (
+    m.includes("does not exist") ||
+    m.includes("relation") ||
+    m.includes("not found") ||
+    m.includes("schema cache") ||
+    m.includes("could not find the table")
+  );
 }
 
 async function runWithTable(candidates, fn) {
