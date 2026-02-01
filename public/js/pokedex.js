@@ -13,7 +13,6 @@
 
   const typeLabel = (t) => ({ hash: "Hash", weed: "Weed", extraction: "Extraction", wpff: "WPFF" }[t] || t);
   const weedKindLabel = (k) => ({ indica: "Indica", sativa: "Sativa", hybrid: "Hybrid" }[k] || k);
-
   const formatList = (arr) => (Array.isArray(arr) && arr.length ? arr.join(", ") : "—");
 
   function cardDesc(c) {
@@ -75,7 +74,6 @@
   const detailsSkeleton = $("detailsSkeleton");
   const detailsReal = $("detailsReal");
 
-  // Featured (Rare)
   const featuredBox = $("featuredBox");
   const featuredImg = $("featuredImg");
   const featuredTitle = $("featuredTitle");
@@ -86,31 +84,25 @@
   const featuredCount = $("featuredCount");
   const sparklesWrap = $("sparkles");
 
-  // QUICK SECTIONS
-  const trendRow = $("trendRow");
-  const newRow = $("newRow");
-  const popularRow = $("popularRow");
-  const trendMoreBtn = $("trendMoreBtn");
-  const newMoreBtn = $("newMoreBtn");
-  const popularMoreBtn = $("popularMoreBtn");
-
   // Farms UI
   const farmSection = $("farmSection");
   const farmSearchInput = $("farmSearchInput");
   const farmClearBtn = $("farmClearBtn");
   const farmList = $("farmList");
 
-  // Admin modal
-  const adminBtn = $("adminBtn");
-  const adminModalEl = $("adminModal");
-  const adminCommands = $("adminCommands");
-  const copyAdminBtn = $("copyAdminBtn");
-
-  // MyDex/Profile
+  // MyDex/Profile panels
   const myDexList = $("myDexList");
   const myDexEmpty = $("myDexEmpty");
   const profileUserId = $("profileUserId");
   const profileFavCount = $("profileFavCount");
+
+  // Stats rows
+  const trendRow = $("trendRow");
+  const newRow = $("newRow");
+  const popularRow = $("popularRow");
+  const trendMoreBtn = $("trendMoreBtn");
+  const newMoreBtn = $("newMoreBtn");
+  const popularMoreBtn = $("popularMoreBtn");
 
   if (!listEl || !countBadge || !searchInput) {
     console.error("❌ IDs HTML manquants (list/countBadge/searchInput).");
@@ -125,13 +117,14 @@
   let activeFarm = "all";
 
   let activeType = "all";
-  let activeSub = "all"; // all | indica/sativa/hybrid | subcategory id
+  let activeSub = "all"; // weed: indica/sativa/hybrid | others: subcategory_id
   let selected = null;
 
   let sortMode = "new"; // new | az | thc
   let showFavOnly = false;
 
-  let adminIds = [];
+  // ✅ “Voir tout” sections -> override list by IDs
+  let listOverride = null; // Set<string> | null
 
   /* ================= FALLBACK DATA ================= */
   const fallbackPokedex = [
@@ -150,6 +143,7 @@
       advice: "Commence bas. Évite de mélanger. Respecte la législation.",
       subcategory_id: null,
       farm_id: null,
+      created_at: null,
     },
   ];
 
@@ -190,23 +184,6 @@
     return Array.isArray(data) ? data : [];
   }
 
-  async function loadConfig() {
-    try {
-      const res = await fetch("/api/config", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
-      adminIds = Array.isArray(data?.admin_ids) ? data.admin_ids.map(String) : [];
-      const isAdmin = tgUserId && adminIds.includes(String(tgUserId));
-      if (adminBtn) adminBtn.style.display = isAdmin ? "inline-block" : "none";
-      if (adminCommands) {
-        adminCommands.textContent =
-          "👑 Commandes Admin\n\n" +
-          "• /adminhelp\n• /dbtest\n• /stat\n• /list ...\n• /addform\n• /editform\n• /delform\n• /edit <id> <champ> <val>\n• /del <id>\n\n" +
-          "Rare/Shiny: /rare /unrare /rareinfo\nPartenaire: /partner /unpartner /partnerinfo\n";
-      }
-    } catch {}
-  }
-
   async function loadCards() {
     try {
       const res = await fetch("/api/cards", { cache: "no-store" });
@@ -228,12 +205,11 @@
         advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
         is_featured: Boolean(c.is_featured),
         featured_title: c.featured_title || null,
-        is_partner: Boolean(c.is_partner),
-        partner_title: c.partner_title || null,
-        subcategory_id: c.subcategory_id ?? (c.subcategory && c.subcategory.id != null ? c.subcategory.id : null),
-        subcategory: c.subcategory || null,
-        farm_id: c.farm_id ?? (c.farm && c.farm.id != null ? c.farm.id : null),
-        farm: c.farm || null,
+
+        // ✅ IMPORTANT pour filtres stricts
+        subcategory_id: c.subcategory_id != null ? Number(c.subcategory_id) : null,
+        farm_id: c.farm_id != null ? Number(c.farm_id) : (c.farm?.id != null ? Number(c.farm.id) : null),
+        created_at: c.created_at || null,
       }));
 
       pokedex = mapped.length ? mapped : fallbackPokedex;
@@ -272,8 +248,9 @@
         effects: Array.isArray(c.effects) ? c.effects : [],
         advice: c.advice || "Info éducative. Les effets varient selon la personne. Respecte la loi.",
         featured_title: c.featured_title || "✨ Shiny du moment",
-        subcategory_id: c.subcategory_id ?? null,
-        farm_id: c.farm_id ?? null,
+        subcategory_id: c.subcategory_id != null ? Number(c.subcategory_id) : null,
+        farm_id: c.farm_id != null ? Number(c.farm_id) : (c.farm?.id != null ? Number(c.farm.id) : null),
+        created_at: c.created_at || null,
       };
 
       renderFeatured();
@@ -290,17 +267,26 @@
       const data = await res.json();
       subcategories = Array.isArray(data) ? data : [];
     } catch (e) {
-      console.warn("⚠️ /api/subcategories KO", e);
-      subcategories = [];
+      console.warn("⚠️ /api/subcategories KO -> fallback", e);
+      subcategories = [
+        { id: "dry_sift", type: "hash", label: "Dry Sift", sort: 10 },
+        { id: "static_sift", type: "hash", label: "Static Sift", sort: 15 },
+        { id: "ice_o_lator", type: "hash", label: "Ice-O-Lator", sort: 20 },
+        { id: "full_melt", type: "hash", label: "Full Melt", sort: 30 },
+        { id: "rosin", type: "extraction", label: "Rosin", sort: 10 },
+      ];
     }
   }
 
   async function loadFarms() {
+    // ✅ optionnel: si tu as un endpoint /api/farms un jour
+    // sinon on dérive depuis cards
     try {
-      const res = await fetch("/api/farms", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      farms = Array.isArray(data) ? data : [];
+      const derived = new Map();
+      pokedex.forEach(c => {
+        if (c.farm_id != null) derived.set(String(c.farm_id), { id: c.farm_id, name: `Farm #${c.farm_id}` });
+      });
+      farms = [...derived.values()];
     } catch {
       farms = [];
     }
@@ -386,94 +372,6 @@
     });
   }
 
-  /* ================= QUICK SECTIONS (Trend/New/Popular) ================= */
-  function miniCardEl(c) {
-    const el = document.createElement("div");
-    el.className = "hd-mini";
-    const subTxt = (() => {
-      const t = norm(c.type);
-      if (t === "weed" && c.weed_kind) return ` • ${weedKindLabel(norm(c.weed_kind))}`;
-      if (c.subcategory && typeof c.subcategory === "string") return ` • ${c.subcategory}`;
-      return "";
-    })();
-
-    el.innerHTML = `
-      <div class="d-flex gap-2 align-items-center">
-        <img src="${safeStr(c.img || "https://i.imgur.com/0HqWQvH.png")}" width="44" height="44"
-          style="border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,.10);" />
-        <div>
-          <div class="t1">${safeStr(c.name)}</div>
-          <div class="t2">#${c.id} • ${typeLabel(c.type)}${subTxt}</div>
-        </div>
-      </div>
-    `;
-    el.addEventListener("click", () => {
-      // On sélectionne en mode fiche complète
-      selectCard({
-        id: c.id,
-        name: c.name,
-        type: c.type,
-        micron: c.micron ?? null,
-        weed_kind: c.weed_kind ?? null,
-        thc: c.thc ?? "—",
-        desc: cardDesc(c),
-        img: c.img || "https://i.imgur.com/0HqWQvH.png",
-        terpenes: Array.isArray(c.terpenes) ? c.terpenes : [],
-        aroma: Array.isArray(c.aroma) ? c.aroma : [],
-        effects: Array.isArray(c.effects) ? c.effects : [],
-        advice: c.advice || "",
-        subcategory_id: c.subcategory_id ?? null,
-        subcategory: c.subcategory ?? null,
-        farm_id: c.farm_id ?? null,
-        farm: c.farm ?? null,
-      }, true);
-      toast("✅ Fiche ouverte");
-      haptic("light");
-    });
-    return el;
-  }
-
-  async function loadSection(endpoint, rowEl) {
-    if (!rowEl) return;
-    rowEl.innerHTML = "";
-    try {
-      const res = await fetch(endpoint, { cache: "no-store" });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const data = await res.json();
-      const arr = Array.isArray(data) ? data.slice(0, 8) : [];
-      if (!arr.length) {
-        rowEl.innerHTML = `<div class="text-secondary">—</div>`;
-        return;
-      }
-      arr.forEach((c) => rowEl.appendChild(miniCardEl(c)));
-    } catch (e) {
-      rowEl.innerHTML = `<div class="text-secondary">—</div>`;
-    }
-  }
-
-  function goSeeAll(mode) {
-    // mode: "popular" | "new" | "trend"
-    // On revient sur la liste principale et on met un tri cohérent
-    document.getElementById("btnNavDex")?.click?.();
-    if (mode === "new") {
-      sortMode = "new";
-      if (sortSelect) sortSelect.value = "new";
-    } else if (mode === "popular" || mode === "trend") {
-      // pas de tri "popular" dans la liste -> on laisse "new" mais on active favoris-only OFF
-      sortMode = "new";
-      if (sortSelect) sortSelect.value = "new";
-    }
-    showFavOnly = false;
-    favToggle?.classList?.remove("active");
-    if (favToggle) favToggle.textContent = "❤️ Favoris";
-
-    // on enlève les filtres chips
-    document.querySelector('.chip[data-type="all"]')?.click?.();
-    renderList();
-    toast("🔎 Affichage complet");
-    haptic("light");
-  }
-
   /* ================= SUB-CHIPS ================= */
   function chipBtn(label, value, active = false) {
     const btn = document.createElement("button");
@@ -507,20 +405,23 @@
       ]);
       if (activeSub !== "all" && !["indica","sativa","hybrid"].includes(activeSub)) activeSub = "all";
     } else {
+      // ✅ IMPORTANT: ta DB a subcategories en BIGINT id.
+      // Donc on utilise ID numérique (ex: 5,7...)
       const subs = (subcategories || [])
-        .filter((s) => norm(s.type) === activeType)
+        .filter((s) => s.type === activeType)
         .sort((a, b) => (a.sort || 0) - (b.sort || 0))
         .map((s) => ({ label: s.label, value: String(s.id) }));
 
       options = options.concat(subs);
 
-      if (activeSub !== "all" && !subs.some((s) => s.value === String(activeSub))) activeSub = "all";
+      if (activeSub !== "all" && !subs.some((s) => String(s.value) === String(activeSub))) activeSub = "all";
     }
 
     options.forEach((opt) => {
       const btn = chipBtn(opt.label, opt.value, String(activeSub) === String(opt.value));
       btn.addEventListener("click", () => {
         activeSub = opt.value;
+        listOverride = null; // ✅ reset override si tu changes de sub-filter
         renderSubChips();
         renderList();
         haptic("light");
@@ -534,22 +435,28 @@
     const q = norm(searchInput?.value || "");
     const t = norm(card.type);
 
+    // override list (Tendance/Nouveau/Populaire "Voir tout")
+    if (listOverride && !listOverride.has(String(card.id))) return false;
+
     if (activeType !== "all" && activeType !== "farm" && t !== activeType) return false;
 
+    // ✅ Sous-catégories strictes
     if (activeType === "weed") {
       if (activeSub !== "all") {
-        if (norm(card.weed_kind) !== norm(activeSub)) return false;
+        if (norm(card.weed_kind) !== String(activeSub)) return false;
       }
     } else if (activeType !== "all" && activeType !== "farm") {
       if (activeSub !== "all") {
-        const scId = card.subcategory_id != null ? String(card.subcategory_id) : null;
-        if (scId && scId !== String(activeSub)) return false;
+        // STRICT: si la fiche n'a pas subcategory_id -> elle ne doit PAS apparaître
+        const scId = (card.subcategory_id != null) ? String(card.subcategory_id) : null;
+        if (!scId) return false;
+        if (scId !== String(activeSub)) return false;
       }
     }
 
     if (activeFarm !== "all") {
-      const fid = card.farm_id != null ? String(card.farm_id) : (card.farm && card.farm.id != null ? String(card.farm.id) : "");
-      if (fid && fid !== String(activeFarm)) return false;
+      const fid = card.farm_id != null ? String(card.farm_id) : "";
+      if (!fid || fid !== String(activeFarm)) return false;
     }
 
     if (showFavOnly) {
@@ -611,7 +518,6 @@
       if (farmSection) farmSection.style.display = "block";
       listEl.innerHTML = "";
       updateBadges();
-      renderFarmList();
       return;
     } else {
       if (farmSection) farmSection.style.display = "none";
@@ -637,12 +543,13 @@
       btn.style.marginBottom = "8px";
 
       const subTxt = (() => {
-        if (norm(c.type) === "weed" && c.weed_kind) return ` • ${weedKindLabel(norm(c.weed_kind))}`;
+        const t = norm(c.type);
+        if (t === "weed" && c.weed_kind) return ` • ${weedKindLabel(norm(c.weed_kind))}`;
+        // afficher label subcategory si dispo
         if (c.subcategory_id != null) {
-          const found = (subcategories || []).find((x) => String(x.id) === String(c.subcategory_id));
-          return found ? ` • ${found.label}` : "";
+          const found = (subcategories || []).find(x => String(x.id) === String(c.subcategory_id));
+          if (found) return ` • ${found.label}`;
         }
-        if (typeof c.subcategory === "string" && c.subcategory.trim()) return ` • ${c.subcategory.trim()}`;
         return "";
       })();
 
@@ -681,13 +588,9 @@
       const t = norm(card.type);
       let sub = "";
       if (t === "weed" && card.weed_kind) sub = ` • ${weedKindLabel(norm(card.weed_kind))}`;
-      if (t !== "weed") {
-        if (card.subcategory_id != null) {
-          const found = (subcategories || []).find((x) => String(x.id) === String(card.subcategory_id));
-          if (found) sub = ` • ${found.label}`;
-        } else if (typeof card.subcategory === "string" && card.subcategory.trim()) {
-          sub = ` • ${card.subcategory.trim()}`;
-        }
+      if (t !== "weed" && card.subcategory_id != null) {
+        const found = (subcategories || []).find(x => String(x.id) === String(card.subcategory_id));
+        if (found) sub = ` • ${found.label}`;
       }
       const micron = (t !== "weed" && card.micron) ? ` • ${norm(card.micron)}` : "";
       pokeType.textContent = `${typeLabel(card.type)}${sub}${micron}`;
@@ -736,20 +639,18 @@
           aroma: Array.isArray(c.aroma) ? c.aroma : [],
           effects: Array.isArray(c.effects) ? c.effects : [],
           advice: c.advice || "",
-          subcategory_id: c.subcategory_id ?? null,
-          subcategory: c.subcategory ?? null,
-          farm_id: c.farm_id ?? null,
-          farm: c.farm ?? null,
+          subcategory_id: c.subcategory_id != null ? Number(c.subcategory_id) : null,
+          farm_id: c.farm_id != null ? Number(c.farm_id) : (c.farm?.id != null ? Number(c.farm.id) : null),
         }));
 
-        favsLocal = new Set(cards.map((x) => String(x.id)));
+        favsLocal = new Set(cards.map(x => String(x.id)));
         saveFavsLocal(favsLocal);
         updateBadges();
       } catch (e) {
         console.warn("⚠️ loadMyDex API KO", e);
       }
     } else {
-      cards = pokedex.filter((c) => favsLocal.has(String(c.id)));
+      cards = pokedex.filter(c => favsLocal.has(String(c.id)));
     }
 
     if (!cards.length) return;
@@ -790,7 +691,83 @@
   window.loadMyDex = loadMyDex;
   window.loadProfile = loadProfile;
 
-  /* ================= FARMS LIST ================= */
+  /* ================= STATS SECTIONS (Tendance/Nouveau/Populaire) ================= */
+  function miniCardEl(c) {
+    const div = document.createElement("div");
+    div.className = "hd-mini";
+    const t = norm(c.type);
+    const sc = (t !== "weed" && c.subcategory_id != null)
+      ? ((subcategories || []).find(x => String(x.id) === String(c.subcategory_id))?.label || "")
+      : (t === "weed" && c.weed_kind ? weedKindLabel(norm(c.weed_kind)) : "");
+
+    div.innerHTML = `
+      <div class="t1">${safeStr(c.name)}</div>
+      <div class="t2">#${c.id} • ${typeLabel(c.type)}${sc ? " • " + sc : ""}</div>
+    `;
+    div.addEventListener("click", () => {
+      // pick from main pokedex if exists (to keep same object shape)
+      const real = pokedex.find(x => String(x.id) === String(c.id)) || c;
+      selectCard(real, true);
+      haptic("light");
+    });
+    return div;
+  }
+
+  function renderRow(rowEl, items) {
+    if (!rowEl) return;
+    rowEl.innerHTML = "";
+    if (!items || !items.length) {
+      const d = document.createElement("div");
+      d.className = "text-secondary";
+      d.textContent = "—";
+      rowEl.appendChild(d);
+      return;
+    }
+    items.slice(0, 8).forEach((c) => rowEl.appendChild(miniCardEl(c)));
+  }
+
+  async function loadStatsRow(endpoint, rowEl) {
+    try {
+      const res = await fetch(endpoint, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      const arr = Array.isArray(data) ? data : [];
+      // normalize minimal
+      const normalized = arr.map(c => ({
+        id: Number(c.id) || c.id,
+        name: c.name || "Sans nom",
+        type: c.type || "hash",
+        weed_kind: c.weed_kind ?? null,
+        subcategory_id: c.subcategory_id != null ? Number(c.subcategory_id) : null,
+      }));
+      renderRow(rowEl, normalized);
+      return normalized;
+    } catch (e) {
+      console.warn("⚠️ stats row KO", endpoint, e);
+      renderRow(rowEl, []);
+      return [];
+    }
+  }
+
+  function setOverrideFrom(items, label) {
+    if (!items || !items.length) return toast("Rien à afficher");
+    listOverride = new Set(items.map(x => String(x.id)));
+    toast(`📌 Voir tout: ${label}`);
+    // reset filters to show them
+    activeType = "all";
+    activeSub = "all";
+    activeFarm = "all";
+    showFavOnly = false;
+    favToggle?.classList?.remove("active");
+    favToggle.textContent = "❤️ Favoris";
+    document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
+    document.querySelector('.chip[data-type="all"]')?.classList?.add("active");
+    renderSubChips();
+    renderList();
+    haptic("medium");
+  }
+
+  /* ================= FARMS LIST (simple) ================= */
   function renderFarmList() {
     if (!farmList) return;
     farmList.innerHTML = "";
@@ -826,7 +803,14 @@
       `;
       btn.addEventListener("click", () => {
         activeFarm = String(f.id);
-        document.querySelector('.chip[data-type="all"]')?.click?.();
+        // retourne sur "Tous"
+        listOverride = null;
+        document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
+        document.querySelector('.chip[data-type="all"]')?.classList?.add("active");
+        activeType = "all";
+        activeSub = "all";
+        renderSubChips();
+        renderList();
         toast(`🌾 ${safeStr(f.name)} sélectionnée`);
         haptic("light");
       });
@@ -837,11 +821,12 @@
   /* ================= EVENTS ================= */
   document.querySelectorAll(".chip").forEach((b) => {
     b.addEventListener("click", () => {
-      document.querySelectorAll(".chip").forEach((x) => x.classList.remove("active"));
+      document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
       b.classList.add("active");
 
       activeType = b.dataset.type || "all";
       activeSub = "all";
+      listOverride = null; // ✅ important: on quitte “Voir tout” quand tu changes de chip
 
       if (farmSection) farmSection.style.display = (activeType === "farm") ? "block" : "none";
       if (activeType === "farm") renderFarmList();
@@ -853,16 +838,18 @@
   });
 
   searchInput?.addEventListener("input", () => renderList());
-  clearBtn?.addEventListener("click", () => {
-    if (searchInput) searchInput.value = "";
-    renderList();
-    haptic("light");
-  });
 
   farmSearchInput?.addEventListener("input", () => renderFarmList());
   farmClearBtn?.addEventListener("click", () => {
     if (farmSearchInput) farmSearchInput.value = "";
     renderFarmList();
+    haptic("light");
+  });
+
+  clearBtn?.addEventListener("click", () => {
+    searchInput.value = "";
+    listOverride = null; // ✅ clear “Voir tout” quand tu clear
+    renderList();
     haptic("light");
   });
 
@@ -874,6 +861,7 @@
 
   favToggle?.addEventListener("click", () => {
     showFavOnly = !showFavOnly;
+    listOverride = null;
     favToggle.classList.toggle("active", showFavOnly);
     favToggle.textContent = showFavOnly ? "❤️ Favoris ON" : "❤️ Favoris";
     renderList();
@@ -900,10 +888,7 @@
     }
   });
 
-  closeBtn?.addEventListener("click", () => {
-    try { tg?.close(); } catch {}
-  });
-
+  closeBtn?.addEventListener("click", () => { try { tg?.close(); } catch {} });
   themeBtn?.addEventListener("click", toggleTheme);
 
   favBtn?.addEventListener("click", async () => {
@@ -936,47 +921,13 @@
     haptic("medium");
   });
 
-  // Admin modal actions
-  if (adminBtn && adminModalEl) {
-    let adminModal = null;
-    try {
-      adminModal = new bootstrap.Modal(adminModalEl);
-    } catch {}
-
-    adminBtn.addEventListener("click", () => {
-      if (adminModal) adminModal.show();
-    });
-
-    copyAdminBtn?.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(adminCommands?.textContent || "");
-        toast("📋 Copié !");
-      } catch {
-        toast("❌ Impossible de copier");
-      }
-    });
-  }
-
-  // Quick section buttons
-  trendMoreBtn?.addEventListener("click", () => goSeeAll("trend"));
-  newMoreBtn?.addEventListener("click", () => goSeeAll("new"));
-  popularMoreBtn?.addEventListener("click", () => goSeeAll("popular"));
-
   /* ================= INIT ================= */
   async function init() {
     applyThemeFromStorage();
     setLoading(true);
 
-    await loadConfig();
-    await Promise.all([loadSubcategories(), loadFarms(), loadCards()]);
-    await loadFeatured();
-
-    // sections
-    await Promise.all([
-      loadSection("/api/stats/trending?limit=8", trendRow),
-      loadSection("/api/stats/new?limit=8", newRow),
-      loadSection("/api/stats/popular?limit=8", popularRow),
-    ]);
+    await Promise.all([loadSubcategories(), loadCards()]);
+    await Promise.all([loadFarms(), loadFeatured()]);
 
     renderSubChips();
     renderList();
@@ -986,14 +937,22 @@
     loadProfile();
     updateBadges();
 
+    // ✅ load sections
+    const [trendItems, newItems, popularItems] = await Promise.all([
+      loadStatsRow("/api/stats/trending?limit=8", trendRow),
+      loadStatsRow("/api/stats/new?limit=8", newRow),
+      loadStatsRow("/api/stats/popular?limit=8", popularRow),
+    ]);
+
+    trendMoreBtn?.addEventListener("click", () => setOverrideFrom(trendItems, "Tendance"));
+    newMoreBtn?.addEventListener("click", () => setOverrideFrom(newItems, "Nouveautés"));
+    popularMoreBtn?.addEventListener("click", () => setOverrideFrom(popularItems, "Populaire"));
+
     setLoading(false);
 
     const h = (window.location.hash || "").toLowerCase();
-    if (h === "#mydex") {
-      document.getElementById("btnNavMyDex")?.click?.();
-    } else if (h === "#profile") {
-      document.getElementById("btnNavProfile")?.click?.();
-    }
+    if (h === "#mydex") document.getElementById("btnNavMyDex")?.click?.();
+    else if (h === "#profile") document.getElementById("btnNavProfile")?.click?.();
   }
 
   init();
